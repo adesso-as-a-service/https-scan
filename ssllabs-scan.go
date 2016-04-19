@@ -770,6 +770,17 @@ func (manager *Manager) run() {
 				if currentAssessments < maxAssessments {
 					host, hasNext := manager.hostProvider.next()
 					if hasNext {
+						// Check to see if host is reachable over SSL
+						// before continuing to API to reduce load
+						conn, err := tls.Dial("tcp", host + ":443", nil)
+						if err != nil {
+							log.Printf("[DEBUG] SSL unavailable for %v: %v", host, err)
+							continue
+							} else{
+	 						log.Printf("[INFO] SSL available for %v, continuing to API", host)
+ 								}
+ 							conn.Close()
+
 						manager.startAssessment(host)
 					} else {
 						// We've run out of hostnames and now just need
