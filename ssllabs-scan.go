@@ -1017,14 +1017,14 @@ func writeToDb(report *LabsReport) {
 		var chainData string
 		for m := range currentEndpoint.Details.Chain.Certs {
 			currentChainCert := currentEndpoint.Details.Chain.Certs[m]
-			chainIssuers += currentChainCert.IssuerLabel + "\n"
-			subject += currentChainCert.Subject + "\n"
-			issuer += currentChainCert.IssuerLabel + "\n"
-			signatureAlg += currentChainCert.SigAlg + "\n"
-			keyAlg += currentChainCert.KeyAlg + "\n"
+			chainIssuers += currentChainCert.IssuerLabel + "|"
+			subject += currentChainCert.Subject + "|"
+			issuer += currentChainCert.IssuerLabel + "|"
+			signatureAlg += currentChainCert.SigAlg + "|"
+			keyAlg += currentChainCert.KeyAlg + "|"
 			keySize = currentChainCert.KeySize
 			chainSize += len(currentChainCert.Raw)
-			chainData += currentChainCert.Raw + "\n"
+			chainData += currentChainCert.Raw + "|"
 		}
 
 		Sqlconfiguration := readSqlConfig("sql_config.json")
