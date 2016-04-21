@@ -934,6 +934,34 @@ func readSqlConfig(file string) SqlConfiguration{
 	return configuration
 }
 
+func writeFailureToDb(string host){
+	Sqlconfiguration := readSqlConfig("sql_config.json")
+
+	db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", Sqlconfiguration.SqlServer, Sqlconfiguration.SqlUserId, Sqlconfiguration.SqlPassword, Sqlconfiguration.SqlDatabase, Sqlconfiguration.SqlEncryption))
+	if err != nil {
+		log.Fatalf("[ERROR] Connecting to SQL-Server: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatalf("[ERROR] Can't ping SQL-Server: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("[ERROR] Can't begin SQL-Transaction: %v", err)
+	}
+	// TODO: Change Databse Name
+	result, err := db.Exec("Insert into Certificates_Test (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, RequestDuration, CertSubject, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SessionResumption, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", host, 0, "Failure", 0, 0, F, 0, "Failure", "Failure", 0, 0, "Failure", 0, 0, "Failure", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Failure", 0, 0, 0, "Failure", "Failure", "Failure", "Failure")
+	if err != nil {
+		log.Fatalf("[ERROR] Error executing SQL-Transaction: %v", err)
+	}
+	if err == nil {
+		fmt.Println(result.RowsAffected())
+		tx.Commit()
+	} else {
+		tx.Rollback()
+	}
+	db.Close()
+}
+
 func writeToDb(report *LabsReport) {
 	// Insert Infos into Database
 	currentReport := report
