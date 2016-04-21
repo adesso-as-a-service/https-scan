@@ -37,6 +37,8 @@ import "strings"
 import "sync/atomic"
 import "time"
 import "sort"
+import "database/sql"
+import _ "github.com/denisenkom/go-mssqldb"
 
 const (
 	LOG_NONE     = -1
@@ -81,6 +83,14 @@ var globalMaxAge = 0
 var globalInsecure = false
 
 var httpClient *http.Client
+
+type SqlConfiguration struct {
+  SqlServer      string
+  SqlUserId      string
+	SqlPassword    string
+	SqlDatabase    string
+	SqlEncryption	 string
+}
 
 type LabsError struct {
 	Field   string
@@ -326,6 +336,10 @@ type LabsInfo struct {
 	CurrentAssessments   int
 	NewAssessmentCoolOff int64
 	Messages             []string
+}
+
+func msUnixToTime(ms int64) time.Time {
+	return time.Unix(0, ms*int64(time.Millisecond))
 }
 
 func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
@@ -743,6 +757,8 @@ func (manager *Manager) run() {
 
 				activeAssessments--
 
+				writeToDb(e.report)
+
 				manager.results.reports = append(manager.results.reports, *e.report)
 				manager.results.responses = append(manager.results.responses, e.report.rawJSON)
 
@@ -913,6 +929,171 @@ func validateHostname(hostname string) bool {
 	} else {
 		return true
 	}
+}
+
+func readSqlConfig(file string) SqlConfiguration{
+	configFile, err := os.Open("sql_config.json")
+	if err != nil {
+		log.Fatalf("[ERROR] Opening specified sql_config failed: %v", err)
+	}
+	decoder := json.NewDecoder(configFile)
+	configuration := SqlConfiguration{}
+	decoderErr := decoder.Decode(&configuration)
+	if decoderErr != nil {
+		log.Fatalf("[ERROR] Decoding sql_config failed: %v", err)
+	}
+	return configuration
+}
+
+func writeFailureToDb(string host){
+	Sqlconfiguration := readSqlConfig("sql_config.json")
+
+	db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", Sqlconfiguration.SqlServer, Sqlconfiguration.SqlUserId, Sqlconfiguration.SqlPassword, Sqlconfiguration.SqlDatabase, Sqlconfiguration.SqlEncryption))
+	if err != nil {
+		log.Fatalf("[ERROR] Connecting to SQL-Server: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatalf("[ERROR] Can't ping SQL-Server: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("[ERROR] Can't begin SQL-Transaction: %v", err)
+	}
+	// TODO: Change Databse Name
+	result, err := db.Exec("Insert into Certificates_Test (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, RequestDuration, CertSubject, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SessionResumption, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", host, 0, "Failure", 0, 0, F, 0, "Failure", "Failure", 0, 0, "Failure", 0, 0, "Failure", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Failure", 0, 0, 0, "Failure", "Failure", "Failure", "Failure")
+	if err != nil {
+		log.Fatalf("[ERROR] Error executing SQL-Transaction: %v", err)
+	}
+	if err == nil {
+		fmt.Println(result.RowsAffected())
+		tx.Commit()
+	} else {
+		tx.Rollback()
+	}
+	db.Close()
+}
+
+func writeToDb(report *LabsReport) {
+	// Insert Infos into Database
+	currentReport := report
+
+	for k := range currentReport.Endpoints {
+		currentEndpoint := currentReport.Endpoints[k]
+
+		prefixSupport := false
+		if currentEndpoint.Details.PrefixDelegation == true && currentEndpoint.Details.NonPrefixDelegation == true {
+			prefixSupport = true
+		}
+
+		var protocolString string
+		for m := range currentEndpoint.Details.Protocols {
+			currentProtocol := currentEndpoint.Details.Protocols[m]
+			protocolString += currentProtocol.Name + currentProtocol.Version
+		}
+
+		supportsSSL20 := false
+		supportsSSL30 := false
+		supportsTLS10 := false
+		supportsTLS11 := false
+		supportsTLS12 := false
+		if strings.Contains(protocolString, "SSL2.0") {
+			supportsSSL20 = true
+		}
+		if strings.Contains(protocolString, "SSL3.0") {
+			supportsSSL30 = true
+		}
+		if strings.Contains(protocolString, "TLS1.0") {
+			supportsTLS10 = true
+		}
+		if strings.Contains(protocolString, "TLS1.1") {
+			supportsTLS11 = true
+		}
+		if strings.Contains(protocolString, "TLS1.2") {
+			supportsTLS12 = true
+		}
+
+		var suites string
+		for m := range currentEndpoint.Details.Suites.List {
+			currentSuite := currentEndpoint.Details.Suites.List[m]
+			suites += currentSuite.Name + fmt.Sprintf(" (cStr: %v ", currentSuite.CipherStrength)
+			if currentSuite.EcdhStrength != 0 {
+				suites += fmt.Sprintf("ecdhStr: %v ", currentSuite.EcdhStrength)
+			}
+			if currentSuite.EcdhBits != 0 {
+				suites += fmt.Sprintf("ecdhBits: %v", currentSuite.EcdhBits)
+			}
+			suites += ")"
+		}
+
+		var sims string
+		for m := range currentEndpoint.Details.Sims.Results {
+			currentSim := currentEndpoint.Details.Sims.Results[m]
+			sims += fmt.Sprintf("%v (%v %v %v %v);", currentSim.Client.Id, currentSim.ErrorCode, currentSim.Attempts, currentSim.ProtocolId, currentSim.SuiteId)
+		}
+
+		var hstsPreloads string
+		for m := range currentEndpoint.Details.HstsPreloads {
+			currentPreload := currentEndpoint.Details.HstsPreloads[m]
+			hstsPreloads += fmt.Sprintf("%v:%v;", currentPreload.Source, currentPreload.Status)
+		}
+
+		// Encase in string() when used
+		hpkpPolicy, err := json.Marshal(currentEndpoint.Details.HpkpPolicy)
+		hpkpRoPolicy, err := json.Marshal(currentEndpoint.Details.HpkpRoPolicy)
+
+		var hstsPolicyDirectives string
+		for m := range currentEndpoint.Details.HstsPolicy.Directives {
+			hstsPolicyDirectives += fmt.Sprintf("%v : \"%v\" ;", m, currentEndpoint.Details.HstsPolicy.Directives[m])
+		}
+
+		var chainIssuers string
+		var subject string
+		var issuer string
+		var signatureAlg string
+		var keyAlg string
+		var keySize int
+		var chainSize int
+		var chainData string
+		for m := range currentEndpoint.Details.Chain.Certs {
+			currentChainCert := currentEndpoint.Details.Chain.Certs[m]
+			chainIssuers += currentChainCert.IssuerLabel + "|"
+			subject += currentChainCert.Subject + "|"
+			issuer += currentChainCert.IssuerLabel + "|"
+			signatureAlg += currentChainCert.SigAlg + "|"
+			keyAlg += currentChainCert.KeyAlg + "|"
+			keySize = currentChainCert.KeySize
+			chainSize += len(currentChainCert.Raw)
+			chainData += currentChainCert.Raw + "|"
+		}
+
+		Sqlconfiguration := readSqlConfig("sql_config.json")
+
+		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", Sqlconfiguration.SqlServer, Sqlconfiguration.SqlUserId, Sqlconfiguration.SqlPassword, Sqlconfiguration.SqlDatabase, Sqlconfiguration.SqlEncryption))
+		if err != nil {
+			log.Fatalf("[ERROR] Connecting to SQL-Server: %v", err)
+		}
+		if err := db.Ping(); err != nil {
+			log.Fatalf("[ERROR] Can't ping SQL-Server: %v", err)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			log.Fatalf("[ERROR] Can't begin SQL-Transaction: %v", err)
+		}
+		// TODO: Change Databse Name
+		result, err := db.Exec("Insert into Certificates_Test (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, HasWarnings, IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, SignatureAlg, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, ChainIssuers, ChainData, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SuitesInOrder, ServerSignature, DebianFlawed, SessionResumption, RenegSupport, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris, VulnBEAST, StsIncludeSubdomains, Compression, NpnSupport, NpnProtocols, SessionTickets, OcspStapling, SniRequired, HttpStatusCode, HttpForwarding, KeyStrength, Sims, ForwardSecrecy, Heartbeat, Heartbleed, Poodle, PoodleTls, Logjam, Freak, OpenSslCcs, DhYsReuse, DhPrimeCount, DhPrimeList, SupportsRc4, Rc4WithModern, DhUsesKnownPrimes, HstsPolicyMaxAge, HstsPolicyHeader, HstsPolicyStatus, HstsPolicyIncludeSubdomains, HstsPolicyPreload, HstsPolicyDirectives, HpkpPolicy, HpkpRoPolicy, HasSct) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct)
+		if err != nil {
+			log.Fatalf("[ERROR] Error executing SQL-Transaction: %v", err)
+		}
+		if err == nil {
+			fmt.Println(result.RowsAffected())
+			tx.Commit()
+		} else {
+			tx.Rollback()
+		}
+		db.Close()
+
+	}
+
 }
 
 func main() {
