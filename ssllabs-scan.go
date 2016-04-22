@@ -90,6 +90,7 @@ type SqlConfiguration struct {
 	SqlPassword    string
 	SqlDatabase    string
 	SqlEncryption	 string
+	SqlTable       string
 }
 
 type LabsError struct {
@@ -795,7 +796,7 @@ func (manager *Manager) run() {
 							log.Printf("[DEBUG] SSL unavailable for %v: %v", host, err)
 							writeFailureToDb(host)
 							continue
-							} else{
+							} else {
 	 						log.Printf("[INFO] SSL available for %v, continuing to API", host)
  								}
  							conn.Close()
@@ -945,13 +946,16 @@ func readSqlConfig(file string) SqlConfiguration{
 	if decoderErr != nil {
 		log.Fatalf("[ERROR] Decoding sql_config failed: %v", err)
 	}
+	configFile.Close()
 	return configuration
 }
 
 func writeFailureToDb(host string){
-	Sqlconfiguration := readSqlConfig("sql_config.json")
+	sqlConfiguration := readSqlConfig("sql_config.json")
+	var table string = sqlConfiguration.SqlTable
+	query := fmt.Sprintf(`Insert into %v (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, RequestDuration, CertSubject, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SessionResumption, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table)
 
-	db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", Sqlconfiguration.SqlServer, Sqlconfiguration.SqlUserId, Sqlconfiguration.SqlPassword, Sqlconfiguration.SqlDatabase, Sqlconfiguration.SqlEncryption))
+	db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
 	if err != nil {
 		log.Fatalf("[ERROR] Connecting to SQL-Server: %v", err)
 	}
@@ -962,8 +966,7 @@ func writeFailureToDb(host string){
 	if err != nil {
 		log.Fatalf("[ERROR] Can't begin SQL-Transaction: %v", err)
 	}
-	// TODO: Change Databse Name
-	result, err := db.Exec("Insert into Certificates_Test (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, RequestDuration, CertSubject, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SessionResumption, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", host, 0, "Failure", 0, 0, 'F', 0, "Failure", "Failure", 0, 0, "Failure", 0, 0, "Failure", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Failure", 0, 0, 0, "Failure", "Failure", "Failure", "Failure")
+	result, err := db.Exec(query, host, 0, "Failure", 0, 0, 'F', 0, "Failure", "Failure", 0, 0, "Failure", 0, 0, "Failure", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Failure", 0, 0, 0, "Failure", "Failure", "Failure", "Failure")
 	if err != nil {
 		log.Fatalf("[ERROR] Error executing SQL-Transaction: %v", err)
 	}
@@ -1069,13 +1072,14 @@ func writeToDb(report *LabsReport) {
 			keySize = currentChainCert.KeySize
 			chainSize += len(currentChainCert.Raw)
 			chainData += currentChainCert.Raw + "\n"
-			chainSha1Hashes += currentChainCert.Sha1Hash + "\n"
-			chainPinSha256 += currentChainCert.PinSha256 + "\n"
+			chainSha1Hashes += currentChainCert.Sha1Hash + "|"
+			chainPinSha256 += currentChainCert.PinSha256 + "|"
 		}
 
-		Sqlconfiguration := readSqlConfig("sql_config.json")
-
-		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", Sqlconfiguration.SqlServer, Sqlconfiguration.SqlUserId, Sqlconfiguration.SqlPassword, Sqlconfiguration.SqlDatabase, Sqlconfiguration.SqlEncryption))
+		sqlConfiguration := readSqlConfig("sql_config.json")
+		var table string = sqlConfiguration.SqlTable
+		query := fmt.Sprintf(`Insert into %v (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, HasWarnings, IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, SignatureAlg, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, ChainIssuers, ChainData, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SuitesInOrder, ServerSignature, DebianFlawed, SessionResumption, RenegSupport, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris, VulnBEAST, Compression, NpnSupport, NpnProtocols, SessionTickets, OcspStapling, SniRequired, HttpStatusCode, HttpForwarding, KeyStrength, Sims, ForwardSecrecy, Heartbeat, Heartbleed, Poodle, PoodleTls, Logjam, Freak, OpenSslCcs, DhYsReuse, DhPrimeCount, DhPrimeList, SupportsRc4, Rc4WithModern, DhUsesKnownPrimes, HstsPolicyMaxAge, HstsPolicyHeader, HstsPolicyStatus, HstsPolicyIncludeSubdomains, HstsPolicyPreload, HstsPolicyDirectives, HpkpPolicy, HpkpRoPolicy, HasSct, chainPinSha256, chainSha1Hashes) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table)
+		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v", sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
 		if err != nil {
 			log.Fatalf("[ERROR] Connecting to SQL-Server: %v", err)
 		}
@@ -1086,8 +1090,7 @@ func writeToDb(report *LabsReport) {
 		if err != nil {
 			log.Fatalf("[ERROR] Can't begin SQL-Transaction: %v", err)
 		}
-		// TODO: Change Databse Name
-		result, err := db.Exec("Insert into Certificates_Test (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, HasWarnings, IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer, NotAfter, NotBefore, SignatureAlg, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength, ChainIssuers, ChainData, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11, SupportsTLS12, Suites, SuiteCount, SuitesInOrder, ServerSignature, DebianFlawed, SessionResumption, RenegSupport, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris, VulnBEAST, Compression, NpnSupport, NpnProtocols, SessionTickets, OcspStapling, SniRequired, HttpStatusCode, HttpForwarding, KeyStrength, Sims, ForwardSecrecy, Heartbeat, Heartbleed, Poodle, PoodleTls, Logjam, Freak, OpenSslCcs, DhYsReuse, DhPrimeCount, DhPrimeList, SupportsRc4, Rc4WithModern, DhUsesKnownPrimes, HstsPolicyMaxAge, HstsPolicyHeader, HstsPolicyStatus, HstsPolicyIncludeSubdomains, HstsPolicyPreload, HstsPolicyDirectives, HpkpPolicy, HpkpRoPolicy, HasSct, chainPinSha256, chainSha1Hashes) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes)
+		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes)
 		if err != nil {
 			log.Fatalf("[ERROR] Error executing SQL-Transaction: %v", err)
 		}
