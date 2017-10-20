@@ -1,0 +1,8 @@
+{
+    "SqlServer": "sql3",
+    "SqlUserId": "smarthouse_statistics",
+    "SqlPassword": "gUEL7dzfdeu%Qw2m",
+    "SqlDatabase  ": "smarthouse_statistics",
+    "SqlEncryption": "disable",
+    "SqlTable": "Certificates_Test"
+}
