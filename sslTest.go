@@ -52,8 +52,6 @@ func NewSslAssessment(e Event, eventChannel chan Event) {
 			Port: 0,
 		}
 
-		e.report = report
-
 		// Get first IpAddress for DB since we don't have one from the
 		// ssllabs-scan
 		ip, _ := net.LookupIP(e.host)
