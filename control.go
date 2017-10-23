@@ -822,7 +822,7 @@ func main() {
 	}
 
 	hp := NewHostProvider(hostnames)
-	manager := NewMasterManager(hp, map[string]bool{"labs": true, "obs": true, "secH": true, "sql": true, "ssl": true})
+	manager := NewMasterManager(hp, map[string]bool{"labs": true, "obs": true, "secH": true, "sql": true})
 
 	// Respond to events until all the work is done.
 	for {

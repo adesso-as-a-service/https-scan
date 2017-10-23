@@ -136,6 +136,9 @@ func (manager *Manager) secHRun() {
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSecHAssessments--
 				log.Printf("[ERROR] Securityheader Scan for %v failed", e.host)
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+				}
 				//TODO ERROR handeling
 			}
 
@@ -152,6 +155,9 @@ func (manager *Manager) secHRun() {
 
 				activeSecHAssessments--
 
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+				}
 				e.eventType = FINISHED
 				e.senderID = "secH"
 				manager.OutputEventChannel <- e

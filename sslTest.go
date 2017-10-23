@@ -39,6 +39,7 @@ func NewSslAssessment(e Event, eventChannel chan Event) {
 			if logLevel >= LOG_ERROR {
 				log.Printf("[ERROR] HTTP not available for %v, with error: %v", e.host, err.Error())
 			}
+			activeSslAssessments--
 			return
 		}
 		conn.Close()
@@ -51,6 +52,7 @@ func NewSslAssessment(e Event, eventChannel chan Event) {
 			},
 			Port: 0,
 		}
+		e.report = &report
 
 		// Get first IpAddress for DB since we don't have one from the
 		// ssllabs-scan
@@ -58,6 +60,9 @@ func NewSslAssessment(e Event, eventChannel chan Event) {
 		if ip != nil {
 			e.report.Endpoints[0].IpAddress = ip[0].String()
 		}
+		e.eventType = INTERNAL_ASSESSMENT_FAILED
+		eventChannel <- e
+		return
 
 	}
 
@@ -79,7 +84,10 @@ func (manager *Manager) sslRun() {
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSslAssessments--
 				log.Printf("[ERROR] SSL Test for %v failed", e.host)
-				//TODO ERROR handeling
+				manager.ControlEventChannel <- e
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
@@ -94,19 +102,18 @@ func (manager *Manager) sslRun() {
 				}
 
 				activeSslAssessments--
-
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+				}
 				e.eventType = FINISHED
 				e.senderID = "ssl"
 				manager.OutputEventChannel <- e
 
-				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
-				}
 			}
 
 			// Are we done?
 			if (activeSslAssessments == 0) && (moreSslAssessments == false) {
-				manager.finish("obs")
+				manager.finish("ssl")
 				return
 			}
 
@@ -120,13 +127,13 @@ func (manager *Manager) sslRun() {
 				if activeSslAssessments < maxSslAssessments {
 					e, running := <-manager.InputEventChannel
 					if running {
-						manager.startObsAssessment(e)
+						manager.startSslAssessment(e)
 					} else {
 						// We've run out of hostnames and now just need
 						// to wait for all the assessments to complete.
 						moreSslAssessments = false
 
-						if activeObsAssessments == 0 {
+						if activeSslAssessments == 0 {
 							manager.finish("ssl")
 							return
 						}

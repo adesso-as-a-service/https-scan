@@ -319,7 +319,7 @@ func NewObsAssessment(e Event, eventChannel chan Event) {
 	e.senderID = "obs"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
-	err := e.report.invokeObservatoryAnalyzation(e.report.Host)
+	err := e.report.invokeObservatoryAnalyzation(e.host)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
 			log.Printf("[ERROR] Could not invoke mozilla Observatory for host %v: %v", e.report.Host, err)
@@ -359,6 +359,9 @@ func (manager *Manager) obsRun() {
 				activeObsAssessments--
 				log.Printf("[ERROR] Observatory Scan for %v failed", e.host)
 				//TODO ERROR handeling
+				if logLevel >= LOG_NOTICE {
+					log.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
@@ -374,6 +377,9 @@ func (manager *Manager) obsRun() {
 
 				activeObsAssessments--
 
+				if logLevel >= LOG_NOTICE {
+					log.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+				}
 				e.eventType = FINISHED
 				e.senderID = "obs"
 				manager.OutputEventChannel <- e

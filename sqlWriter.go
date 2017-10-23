@@ -235,7 +235,6 @@ func NewSqlAssessment(e Event, eventChannel chan Event) {
 		}
 		if logLevel >= LOG_INFO {
 			log.Printf("[INFO] Connection to SQL-Server failed, retrying in %v seconds", timeout)
-			return
 		}
 		time.Sleep(time.Duration(timeout) * time.Second)
 	}
@@ -257,6 +256,9 @@ func (manager *Manager) sqlRun() {
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSqlAssessments--
 				log.Printf("[ERROR] sqlWrite for %v failed", e.host)
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+				}
 				//TODO ERROR handeling
 			}
 
@@ -273,6 +275,9 @@ func (manager *Manager) sqlRun() {
 
 				activeSqlAssessments--
 
+				if logLevel >= LOG_NOTICE {
+					log.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+				}
 				// We have a finished assessment now that we can add third-party information to
 				// And we won't re-query these third partys by relying on the ssllabs-scan polling
 
