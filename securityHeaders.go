@@ -12,6 +12,9 @@ import (
 
 var globalSecurityheaders bool
 
+//How often do we try
+var secHTries = 2
+
 // How many assessment do we have in progress?
 var activeSecHAssessments = 0
 
@@ -30,7 +33,7 @@ type Securityheaders struct {
 
 // invokeSecurityHeaders is called by a LabsReport object to query the securityheaders.io
 // API for grading and adds the result to the object
-func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSSL bool) error {
+func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSSL bool, logger *log.Logger) error {
 	var securityheaders Securityheaders
 	var apiURL string
 	var hostURL string
@@ -44,19 +47,19 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	}
 
 	if logLevel >= LOG_INFO {
-		log.Printf("[INFO] Getting securityheaders.io assessment: %v", host)
+		logger.Printf("[INFO] Getting securityheaders.io assessment: %v", host)
 	}
 
 	// Get http Header from the securityheaders API to get the grading of the scanned host
 	response, err := http.Head(apiURL)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Error contacting securityheaders.io with host %v : %v", host, err)
+			logger.Printf("[ERROR] Error contacting securityheaders.io with host %v : %v", host, err)
 		}
 	}
 	if response.StatusCode != http.StatusOK {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] securityheaders.io returned non-200 status for host %v : %v", host, response.Status)
+			logger.Printf("[ERROR] securityheaders.io returned non-200 status for host %v : %v", host, response.Status)
 		}
 		err = errors.New("Security Header Assessment failed.")
 		return err
@@ -72,13 +75,13 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	headerResponse, err := client.Head(hostURL)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Error getting headers of host %v : %v", host, err)
+			logger.Printf("[ERROR] Error getting headers of host %v : %v", host, err)
 		}
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] host returned non-200 status when getting headers %v : %v", host, response.Status)
+			logger.Printf("[ERROR] host returned non-200 status when getting headers %v : %v", host, response.Status)
 		}
 		err = errors.New("Security Header Assessment failed.")
 		return err
@@ -88,7 +91,7 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	xScore, err := base64.StdEncoding.DecodeString(response.Header.Get("X-Score"))
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Error decoding X-Score Header from securityheaders.io for %v", host)
+			logger.Printf("[ERROR] Error decoding X-Score Header from securityheaders.io for %v", host)
 		}
 		return err
 	}
@@ -104,14 +107,14 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	return nil
 }
 
-func NewSecHAssessment(e Event, eventChannel chan Event) {
+func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "secH"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
-	err := e.report.invokeSecurityHeaders(e.report.Host, true)
+	err := e.report.invokeSecurityHeaders(e.report.Host, true, logger)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Could not invoke security headers for host %v: %v", e.report.Host, err)
+			logger.Printf("[ERROR] Could not invoke security headers for host %v: %v", e.report.Host, err)
 
 		}
 		e.eventType = INTERNAL_ASSESSMENT_FAILED
@@ -123,7 +126,7 @@ func NewSecHAssessment(e Event, eventChannel chan Event) {
 }
 
 func (manager *Manager) startSecHAssessment(e Event) {
-	go NewSecHAssessment(e, manager.InternalEventChannel)
+	go NewSecHAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSecHAssessments++
 }
 
@@ -135,35 +138,41 @@ func (manager *Manager) secHRun() {
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSecHAssessments--
-				log.Printf("[ERROR] Securityheader Scan for %v failed", e.host)
+				manager.logger.Printf("[ERROR] Securityheader Scan for %v failed", e.host)
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+					manager.logger.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
 				}
-				//TODO ERROR handeling
+				e.tries++
+				if e.tries < secHTries {
+					manager.startSecHAssessment(e)
+				} else {
+					e.eventType = ERROR
+					manager.ControlEventChannel <- e
+				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] Securityheader Scan starting: %v", e.host)
+					manager.logger.Printf("[INFO] Securityheader Scan starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] Securityheader Scan for %v finished", e.host)
+					manager.logger.Printf("[INFO] Securityheader Scan for %v finished", e.host)
 				}
 
 				activeSecHAssessments--
 
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+					manager.logger.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
 				}
 				e.eventType = FINISHED
 				e.senderID = "secH"
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
 				}
 			}
 
@@ -184,6 +193,7 @@ func (manager *Manager) secHRun() {
 				if activeSecHAssessments < maxSecHAssessments {
 					e, running := <-manager.InputEventChannel
 					if running {
+						e.tries = 0
 						manager.startSecHAssessment(e)
 					} else {
 						// We've run out of hostnames and now just need

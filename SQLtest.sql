@@ -1,0 +1,1 @@
+SELECT * FROM Certificates_Test WHERE CreationDate >= '2017/10/24 17:10:00.000';

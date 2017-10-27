@@ -13,6 +13,9 @@ import (
 
 var globalObservatory bool
 
+//How often do we try
+var obsTries = 2
+
 // How many assessment do we have in progress?
 var activeObsAssessments = 0
 
@@ -223,19 +226,19 @@ func (observatoryResults ObservatoryScanResults) ToIssueString() string {
 
 // invokeObservatoryAnalyzation starts an HTTP-Observatory assessment and polls
 // To see if the scan is done, then adding the result to the calling LabsReport object
-func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) error {
+func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string, logger *log.Logger) error {
 	apiURL := "https://http-observatory.security.mozilla.org/api/v1/analyze?host=" + host
 	var analyzeResult ObservatoryAnalyzeResult
 
 	if logLevel >= LOG_INFO {
-		log.Printf("[INFO] Getting observatory analyzation: %v", host)
+		logger.Printf("[INFO] Getting observatory analyzation: %v", host)
 	}
 
 	// Initiate the scan request, the body of the request contains information to hide the scan from the front-page
 	_, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader("hidden=true&rescan=false"))
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Error invoking observatory API for %v : %v", host, err)
+			logger.Printf("[ERROR] Error invoking observatory API for %v : %v", host, err)
 		}
 		return err
 	}
@@ -245,7 +248,7 @@ func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) err
 		response, err := http.Get(apiURL)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Error polling observatory API for %v : %v", host, err)
+				logger.Printf("[ERROR] Error polling observatory API for %v : %v", host, err)
 			}
 			return err
 		}
@@ -253,7 +256,7 @@ func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) err
 		analyzeBody, err := ioutil.ReadAll(response.Body)
 		json.Unmarshal(analyzeBody, &analyzeResult)
 		if logLevel >= LOG_DEBUG {
-			log.Printf("[DEBUG] Observatory Scan is currently %v for host: %v", analyzeResult.State, host)
+			logger.Printf("[DEBUG] Observatory Scan is currently %v for host: %v", analyzeResult.State, host)
 		}
 		switch analyzeResult.State {
 		case "FINISHED":
@@ -262,14 +265,14 @@ func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) err
 		case "ABORTED":
 			observatoryStateError := errors.New("Observatory scan aborted for technical reasons at observatory API")
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Observatory scan failed for host %v", host)
+				logger.Printf("[ERROR] Observatory scan failed for host %v", host)
 			}
 			analyzeResponse.ObservatoryScan = analyzeResult
 			return observatoryStateError
 		case "FAILED":
 			observatoryStateError := errors.New("Failed to request observatory scan")
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Observatory scan failed for host %v", host)
+				logger.Printf("[ERROR] Observatory scan failed for host %v", host)
 			}
 			analyzeResponse.ObservatoryScan = analyzeResult
 			return observatoryStateError
@@ -279,7 +282,7 @@ func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) err
 		default:
 			observatoryStateError := errors.New("Could not request observatory scan")
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Error getting Observatory state for host %v", host)
+				logger.Printf("[ERROR] Error getting Observatory state for host %v", host)
 			}
 			analyzeResponse.ObservatoryScan = analyzeResult
 			return observatoryStateError
@@ -289,12 +292,12 @@ func (analyzeResponse *LabsReport) invokeObservatoryAnalyzation(host string) err
 
 // InvokeObservatoryResults gets the results of an already done scan and
 // And adds them to the calling LabsReport object
-func (analyzeResponse *LabsReport) invokeObservatoryResults(analyzeResults ObservatoryAnalyzeResult) error {
+func (analyzeResponse *LabsReport) invokeObservatoryResults(analyzeResults ObservatoryAnalyzeResult, logger *log.Logger) error {
 	var scanResults ObservatoryScanResults
 	// Getting the results of an unfinished scan won't work -- abort
 	if analyzeResults.State != "FINISHED" {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Analysis not finished but tried to get results")
+			logger.Printf("[ERROR] Analysis not finished but tried to get results")
 		}
 		return errors.New("Invoked results without finished analysis")
 	}
@@ -303,7 +306,7 @@ func (analyzeResponse *LabsReport) invokeObservatoryResults(analyzeResults Obser
 	response, err := http.Get(resultApiUrl)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Error invoking observatory API for current host: %v", err)
+			logger.Printf("[ERROR] Error invoking observatory API for current host: %v", err)
 		}
 		return err
 	}
@@ -315,14 +318,14 @@ func (analyzeResponse *LabsReport) invokeObservatoryResults(analyzeResults Obser
 	return nil
 }
 
-func NewObsAssessment(e Event, eventChannel chan Event) {
+func NewObsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "obs"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
-	err := e.report.invokeObservatoryAnalyzation(e.host)
+	err := e.report.invokeObservatoryAnalyzation(e.host, logger)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
-			log.Printf("[ERROR] Could not invoke mozilla Observatory for host %v: %v", e.report.Host, err)
+			logger.Printf("[ERROR] Could not invoke mozilla Observatory for host %v: %v", e.report.Host, err)
 		}
 		e.eventType = INTERNAL_ASSESSMENT_FAILED
 		eventChannel <- e
@@ -330,10 +333,10 @@ func NewObsAssessment(e Event, eventChannel chan Event) {
 	}
 	// If the analyzation was successful (no err) we can get the results now
 	if err == nil {
-		e.report.invokeObservatoryResults(e.report.ObservatoryScan)
+		e.report.invokeObservatoryResults(e.report.ObservatoryScan, logger)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Could not invoke mozilla Observatory results for host %v: %v", e.report.Host, err)
+				logger.Printf("[ERROR] Could not invoke mozilla Observatory results for host %v: %v", e.report.Host, err)
 			}
 			e.eventType = INTERNAL_ASSESSMENT_FAILED
 			eventChannel <- e
@@ -345,7 +348,7 @@ func NewObsAssessment(e Event, eventChannel chan Event) {
 }
 
 func (manager *Manager) startObsAssessment(e Event) {
-	go NewObsAssessment(e, manager.InternalEventChannel)
+	go NewObsAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeObsAssessments++
 }
 
@@ -356,36 +359,43 @@ func (manager *Manager) obsRun() {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
-				activeObsAssessments--
-				log.Printf("[ERROR] Observatory Scan for %v failed", e.host)
+				manager.logger.Printf("[ERROR] Observatory Scan for %v failed", e.host)
 				//TODO ERROR handeling
 				if logLevel >= LOG_NOTICE {
-					log.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+					manager.logger.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+				}
+				activeObsAssessments--
+				e.tries++
+				if e.tries < obsTries {
+					manager.startObsAssessment(e)
+				} else {
+					e.eventType = ERROR
+					manager.ControlEventChannel <- e
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] Observatory Scan starting: %v", e.host)
+					manager.logger.Printf("[INFO] Observatory Scan starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] Observatory Scan for %v finished", e.host)
+					manager.logger.Printf("[INFO] Observatory Scan for %v finished", e.host)
 				}
 
 				activeObsAssessments--
 
 				if logLevel >= LOG_NOTICE {
-					log.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+					manager.logger.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
 				}
 				e.eventType = FINISHED
 				e.senderID = "obs"
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
 				}
 			}
 
@@ -405,6 +415,7 @@ func (manager *Manager) obsRun() {
 				if activeObsAssessments < maxObsAssessments {
 					e, running := <-manager.InputEventChannel
 					if running {
+						e.tries = 0
 						manager.startObsAssessment(e)
 					} else {
 						// We've run out of hostnames and now just need

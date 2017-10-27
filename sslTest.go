@@ -8,51 +8,47 @@ import (
 	"time"
 )
 
+//How often do we try
+var sslTries = 2
+
 // How many assessment do we have in progress?
 var activeSslAssessments = 0
 
 // The maximum number of assessments we can have in progress at any one time.
 var maxSslAssessments = 10
 
-func NewSslAssessment(e Event, eventChannel chan Event) {
+func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "ssl"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
-	conn, err := tls.Dial("tcp", e.host+":443", nil)
+	var dialer = new(net.Dialer)
+	dialer.Timeout = 60 * time.Second
+	conn, err := tls.DialWithDialer(dialer, "tcp", e.host+":443", nil)
 	if err == nil {
 		conn.Close()
 		if logLevel >= LOG_INFO {
-			log.Printf("[INFO] SSL available for %v, continuing to API", e.host)
+			logger.Printf("[INFO] SSL available for %v, continuing to API", e.host)
 		}
 	} else {
 		if !strings.Contains(err.Error(), "x509") {
 			if logLevel >= LOG_DEBUG {
-				log.Printf("[DEBUG] SSL unavailable for %v: %v", e.host, err.Error())
+				logger.Printf("[DEBUG] SSL unavailable for %v: %v", e.host, err.Error())
 			}
 		} else {
 			if logLevel >= LOG_INFO {
-				log.Printf("[INFO] SSL available for %v, with error: %v", e.host, err.Error())
+				logger.Printf("[INFO] SSL available for %v, with error: %v", e.host, err.Error())
 			}
 		}
-		conn, err := net.Dial("tcp", e.host+":http")
+		conn, err := net.DialTimeout("tcp", e.host+":http", 60*time.Second)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] HTTP not available for %v, with error: %v", e.host, err.Error())
+				logger.Printf("[ERROR] HTTP not available for %v, with error: %v", e.host, err.Error())
 			}
-			activeSslAssessments--
+			e.eventType = INTERNAL_ASSESSMENT_FATAL
+			eventChannel <- e
 			return
 		}
 		conn.Close()
-		report := LabsReport{
-			Host: e.host,
-			Endpoints: []LabsEndpoint{
-				LabsEndpoint{
-					Grade: "70",
-				},
-			},
-			Port: 0,
-		}
-		e.report = &report
 
 		// Get first IpAddress for DB since we don't have one from the
 		// ssllabs-scan
@@ -71,7 +67,7 @@ func NewSslAssessment(e Event, eventChannel chan Event) {
 }
 
 func (manager *Manager) startSslAssessment(e Event) {
-	go NewSslAssessment(e, manager.InternalEventChannel)
+	go NewSslAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSslAssessments++
 }
 
@@ -83,27 +79,40 @@ func (manager *Manager) sslRun() {
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSslAssessments--
-				log.Printf("[ERROR] SSL Test for %v failed", e.host)
-				manager.ControlEventChannel <- e
+				manager.logger.Printf("[ERROR] SSL Test for %v failed", e.host)
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+				}
+				e.tries++
+				if e.tries < sslTries {
+					manager.startSslAssessment(e)
+				} else {
+					e.eventType = ERROR
+					manager.ControlEventChannel <- e
+				}
+			}
+			if e.eventType == INTERNAL_ASSESSMENT_FATAL {
+				activeSslAssessments--
+				manager.logger.Printf("[ERROR] SSL Test for %v fateally failed", e.host)
+				if logLevel >= LOG_NOTICE {
+					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO]SSL Test starting: %v", e.host)
+					manager.logger.Printf("[INFO]SSL Test starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] SSL Test for %v finished", e.host)
+					manager.logger.Printf("[INFO] SSL Test for %v finished", e.host)
 				}
 
 				activeSslAssessments--
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
 				}
 				e.eventType = FINISHED
 				e.senderID = "ssl"
@@ -127,6 +136,7 @@ func (manager *Manager) sslRun() {
 				if activeSslAssessments < maxSslAssessments {
 					e, running := <-manager.InputEventChannel
 					if running {
+						e.tries = 0
 						manager.startSslAssessment(e)
 					} else {
 						// We've run out of hostnames and now just need

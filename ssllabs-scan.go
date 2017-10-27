@@ -17,6 +17,9 @@ import (
 
 var USER_AGENT = "ssllabs-scan v1.4.0 (stable $Id$)"
 
+// How often do we try
+var labsTries = 2
+
 // How many assessment do we have in progress?
 var activeLabsAssessments = 0
 
@@ -33,19 +36,20 @@ var apiLocation = "https://api.ssllabs.com/api/v2"
 var httpClient *http.Client
 
 const (
+	INTERNAL_ASSESSMENT_FATAL    = -2
 	INTERNAL_ASSESSMENT_FAILED   = -1
 	INTERNAL_ASSESSMENT_STARTING = 0
 	INTERNAL_ASSESSMENT_COMPLETE = 1
 )
 
-func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
+func invokeGetRepeatedly(url string, logger *log.Logger) (*http.Response, []byte, error) {
 	retryCount := 0
 
 	for {
 		var reqId = atomic.AddUint64(&requestCounter, 1)
 
 		if logLevel >= LOG_DEBUG {
-			log.Printf("[DEBUG] Request #%v: %v", reqId, url)
+			logger.Printf("[DEBUG] Request #%v: %v", reqId, url)
 		}
 
 		req, err := http.NewRequest("GET", url, nil)
@@ -58,13 +62,13 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 		resp, err := httpClient.Do(req)
 		if err == nil {
 			if logLevel >= LOG_DEBUG {
-				log.Printf("[DEBUG] Response #%v status: %v %v", reqId, resp.Proto, resp.Status)
+				logger.Printf("[DEBUG] Response #%v status: %v %v", reqId, resp.Proto, resp.Status)
 			}
 
 			if logLevel >= LOG_TRACE {
 				for key, values := range resp.Header {
 					for _, value := range values {
-						log.Printf("[TRACE] %v: %v\n", key, value)
+						logger.Printf("[TRACE] %v: %v\n", key, value)
 					}
 				}
 			}
@@ -73,7 +77,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				for key, values := range resp.Header {
 					if strings.ToLower(key) == "x-message" {
 						for _, value := range values {
-							log.Printf("[NOTICE] Server message: %v\n", value)
+							logger.Printf("[NOTICE] Server message: %v\n", value)
 						}
 					}
 				}
@@ -89,12 +93,12 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 						currentLabsAssessments = i
 
 						if logLevel >= LOG_DEBUG {
-							log.Printf("[DEBUG] Server set current assessments to %v", headerValue)
+							logger.Printf("[DEBUG] Server set current assessments to %v", headerValue)
 						}
 					}
 				} else {
 					if logLevel >= LOG_WARNING {
-						log.Printf("[WARNING] Ignoring invalid X-Current-Assessments value (%v): %v", headerValue, err)
+						logger.Printf("[WARNING] Ignoring invalid X-Current-Assessments value (%v): %v", headerValue, err)
 					}
 				}
 			}
@@ -109,16 +113,16 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 						maxLabsAssessments = i
 
 						if maxLabsAssessments <= 0 {
-							log.Fatalf("[ERROR] Server doesn't allow further API requests")
+							logger.Fatalf("[ERROR] Server doesn't allow further API requests")
 						}
 
 						if logLevel >= LOG_DEBUG {
-							log.Printf("[DEBUG] Server set maximum assessments to %v", headerValue)
+							logger.Printf("[DEBUG] Server set maximum assessments to %v", headerValue)
 						}
 					}
 				} else {
 					if logLevel >= LOG_WARNING {
-						log.Printf("[WARNING] Ignoring invalid X-Max-Assessments value (%v): %v", headerValue, err)
+						logger.Printf("[WARNING] Ignoring invalid X-Max-Assessments value (%v): %v", headerValue, err)
 					}
 				}
 			}
@@ -133,7 +137,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 			}
 
 			if logLevel >= LOG_TRACE {
-				log.Printf("[TRACE] Response #%v body:\n%v", reqId, string(body))
+				logger.Printf("[TRACE] Response #%v body:\n%v", reqId, string(body))
 			}
 
 			return resp, body, nil
@@ -143,14 +147,14 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				// Go doesn't seem to be handling well. So we'll try one
 				// more time.
 				if retryCount > 5 {
-					log.Fatalf("[ERROR] Too many HTTP requests (5) failed with EOF (ref#2)")
+					logger.Fatalf("[ERROR] Too many HTTP requests (5) failed with EOF (ref#2)")
 				}
 
 				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] HTTP request failed with EOF (ref#2)")
+					logger.Printf("[DEBUG] HTTP request failed with EOF (ref#2)")
 				}
 			} else {
-				log.Fatalf("[ERROR] HTTP request failed: %v (ref#2)", err.Error())
+				logger.Fatalf("[ERROR] HTTP request failed: %v (ref#2)", err.Error())
 			}
 
 			retryCount++
@@ -158,11 +162,11 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 	}
 }
 
-func invokeApi(command string) (*http.Response, []byte, error) {
+func invokeApi(command string, logger *log.Logger) (*http.Response, []byte, error) {
 	var url = apiLocation + "/" + command
 
 	for {
-		resp, body, err := invokeGetRepeatedly(url)
+		resp, body, err := invokeGetRepeatedly(url, logger)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -178,22 +182,22 @@ func invokeApi(command string) (*http.Response, []byte, error) {
 			sleepTime := 15 + rand.Int31n(15)
 
 			if logLevel >= LOG_NOTICE {
-				log.Printf("[NOTICE] Sleeping for %v minutes after a %v response", sleepTime, resp.StatusCode)
+				logger.Printf("[NOTICE] Sleeping for %v minutes after a %v response", sleepTime, resp.StatusCode)
 			}
 
 			time.Sleep(time.Duration(sleepTime) * time.Minute)
 		} else if (resp.StatusCode != 200) && (resp.StatusCode != 400) {
-			log.Fatalf("[ERROR] Unexpected response status code %v", resp.StatusCode)
+			logger.Fatalf("[ERROR] Unexpected response status code %v", resp.StatusCode)
 		} else {
 			return resp, body, nil
 		}
 	}
 }
 
-func invokeInfo() (*LabsInfo, error) {
+func invokeInfo(logger *log.Logger) (*LabsInfo, error) {
 	var command = "info"
 
-	_, body, err := invokeApi(command)
+	_, body, err := invokeApi(command, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -201,14 +205,14 @@ func invokeInfo() (*LabsInfo, error) {
 	var labsInfo LabsInfo
 	err = json.Unmarshal(body, &labsInfo)
 	if err != nil {
-		log.Printf("[ERROR] JSON unmarshal error: %v", err)
+		logger.Printf("[ERROR] JSON unmarshal error: %v", err)
 		return nil, err
 	}
 
 	return &labsInfo, nil
 }
 
-func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, error) {
+func invokeAnalyze(host string, startNew bool, fromCache bool, logger *log.Logger) (*LabsReport, error) {
 	var command = "analyze?host=" + host + "&all=done"
 
 	if fromCache {
@@ -225,7 +229,7 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 		command = command + "&ignoreMismatch=on"
 	}
 
-	resp, body, err := invokeApi(command)
+	resp, body, err := invokeApi(command, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +241,7 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 		var apiError LabsErrorResponse
 		err = json.Unmarshal(body, &apiError)
 		if err != nil {
-			log.Printf("[ERROR] JSON unmarshal error: %v", err)
+			logger.Printf("[ERROR] JSON unmarshal error: %v", err)
 			return nil, err
 		}
 
@@ -248,7 +252,7 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 		var analyzeResponse LabsReport
 		err = json.Unmarshal(body, &analyzeResponse)
 		if err != nil {
-			log.Printf("[ERROR] JSON unmarshal error: %v", err)
+			logger.Printf("[ERROR] JSON unmarshal error: %v", err)
 			return nil, err
 		}
 
@@ -259,7 +263,7 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 	}
 }
 
-func NewLabsAssessment(e Event, eventChannel chan Event) {
+func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "labs"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
@@ -268,7 +272,7 @@ func NewLabsAssessment(e Event, eventChannel chan Event) {
 	var startNew = globalStartNew
 
 	for {
-		myResponse, err := invokeAnalyze(e.host, startNew, globalFromCache)
+		myResponse, err := invokeAnalyze(e.host, startNew, globalFromCache, logger)
 		if err != nil {
 			e.eventType = INTERNAL_ASSESSMENT_FAILED
 			eventChannel <- e
@@ -305,7 +309,7 @@ func NewLabsAssessment(e Event, eventChannel chan Event) {
 }
 
 func (manager *Manager) startLabsAssessment(e Event) {
-	go NewLabsAssessment(e, manager.InternalEventChannel)
+	go NewLabsAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeLabsAssessments++
 }
 
@@ -322,18 +326,18 @@ func (manager *Manager) labsRun() {
 	// assessments we're allowed to use. Print the API version
 	// information and the limits.
 
-	labsInfo, err := invokeInfo()
+	labsInfo, err := invokeInfo(manager.logger)
 	if err != nil {
 		// TODO Signal error so that we return the correct exit code
 	}
 
 	if logLevel >= LOG_INFO {
-		log.Printf("[INFO] SSL Labs v%v (criteria version %v)", labsInfo.EngineVersion, labsInfo.CriteriaVersion)
+		manager.logger.Printf("[INFO] SSL Labs v%v (criteria version %v)", labsInfo.EngineVersion, labsInfo.CriteriaVersion)
 	}
 
 	if logLevel >= LOG_NOTICE {
 		for _, message := range labsInfo.Messages {
-			log.Printf("[NOTICE] Server message: %v", message)
+			manager.logger.Printf("[NOTICE] Server message: %v", message)
 		}
 	}
 
@@ -341,7 +345,7 @@ func (manager *Manager) labsRun() {
 
 	if maxLabsAssessments <= 0 {
 		if logLevel >= LOG_WARNING {
-			log.Printf("[WARNING] You're not allowed to request new assessments")
+			manager.logger.Printf("[WARNING] You're not allowed to request new assessments")
 		}
 	}
 
@@ -351,7 +355,7 @@ func (manager *Manager) labsRun() {
 		globalNewAssessmentCoolOff = 100 + labsInfo.NewAssessmentCoolOff
 	} else {
 		if logLevel >= LOG_WARNING {
-			log.Printf("[WARNING] Info.NewAssessmentCoolOff too small: %v", labsInfo.NewAssessmentCoolOff)
+			manager.logger.Printf("[WARNING] Info.NewAssessmentCoolOff too small: %v", labsInfo.NewAssessmentCoolOff)
 		}
 	}
 
@@ -360,14 +364,20 @@ func (manager *Manager) labsRun() {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
+				manager.logger.Printf("[ERROR] ssllabs-scan for %v failed!", e.host)
 				activeLabsAssessments--
-				log.Printf("[ERROR] ssllabs-scan for %v failed!", e.host)
-				//TODO ERROR handeling
+				e.tries++
+				if e.tries < labsTries {
+					manager.startLabsAssessment(e)
+				} else {
+					e.eventType = ERROR
+					manager.ControlEventChannel <- e
+				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] Assessment starting: %v", e.host)
+					manager.logger.Printf("[INFO] Assessment starting: %v", e.host)
 				}
 			}
 
@@ -393,7 +403,7 @@ func (manager *Manager) labsRun() {
 						}
 					}
 
-					log.Println(msg)
+					manager.logger.Println(msg)
 				}
 
 				activeLabsAssessments--
@@ -407,7 +417,7 @@ func (manager *Manager) labsRun() {
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] Active assessments: %v (more: %v)", activeLabsAssessments, moreLabsAssessments)
+					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeLabsAssessments, moreLabsAssessments)
 				}
 			}
 
@@ -428,6 +438,7 @@ func (manager *Manager) labsRun() {
 				if currentLabsAssessments < maxLabsAssessments {
 					e, running := <-manager.InputEventChannel
 					if running {
+						e.tries = 0
 						manager.startLabsAssessment(e)
 					} else {
 						// We've run out of hostnames and now just need

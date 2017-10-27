@@ -345,6 +345,7 @@ type Event struct {
 	senderID  string
 	eventType int
 	report    *LabsReport
+	tries     int
 }
 
 const (
@@ -385,6 +386,7 @@ type Manager struct {
 	OutputEventChannel   chan Event
 	InternalEventChannel chan Event
 	ControlEventChannel  chan Event
+	logger               *log.Logger
 }
 
 func NewManager(InputEventChannel chan Event, ControlEventChannel chan Event, id string) *Manager {
@@ -414,24 +416,50 @@ func (manager *Manager) finish(id string) {
 func (manager *Manager) run(id string) error {
 	switch {
 	case id == "ssl":
+		manager.logger = log.New(os.Stdout, "SSLTest: ", log.Ldate|log.Ltime)
 		manager.sslRun()
 		break
 	case id == "labs":
+		manager.logger = log.New(os.Stdout, "SSLLabs: ", log.Ldate|log.Ltime)
 		manager.labsRun()
 		break
 	case id == "obs":
+		manager.logger = log.New(os.Stdout, "Obs.:    ", log.Ldate|log.Ltime)
 		manager.obsRun()
 		break
 	case id == "secH":
+		manager.logger = log.New(os.Stdout, "SecH:    ", log.Ldate|log.Ltime)
 		manager.secHRun()
 		break
 	case id == "sql":
+		manager.logger = log.New(os.Stdout, "SQLwrt:  ", log.Ldate|log.Ltime)
 		manager.sqlRun()
 		break
 	default:
-		return fmt.Errorf("undefined manager.run id: %v", id)
+		return fmt.Errorf("undefined manager.run() for id: %v", id)
 	}
 	return nil
+}
+
+type ErrorHandler struct {
+	errorList         []Event
+	InputEventChannel chan Event
+	QuestionChannel   chan bool
+	FinishedChannel   chan bool
+	channelMap        map[string]chan Event
+	useing            map[string]bool
+}
+
+func NewErrorHandler(InputEventChannel chan Event, QuestionChannel chan bool, FinishedChannel chan bool, channelMap map[string]chan Event, useing map[string]bool) *ErrorHandler {
+	errorHandler := ErrorHandler{
+		InputEventChannel: InputEventChannel,
+		QuestionChannel:   QuestionChannel,
+		FinishedChannel:   FinishedChannel,
+		channelMap:        channelMap,
+		useing:            useing,
+	}
+	go errorHandler.run()
+	return &errorHandler
 }
 
 type MasterManager struct {
@@ -443,6 +471,7 @@ type MasterManager struct {
 	useing              map[string]bool
 	results             *LabsResults
 	managerList         []Manager
+	logger              *log.Logger
 }
 
 func NewMasterManager(hostProvider *HostProvider, useing map[string]bool) *MasterManager {
@@ -455,6 +484,7 @@ func NewMasterManager(hostProvider *HostProvider, useing map[string]bool) *Maste
 		useing:              useing,
 		results:             &LabsResults{reports: make([]LabsReport, 0)},
 		managerList:         make([]Manager, len(chain)),
+		logger:              log.New(os.Stdout, "Control: ", log.Ldate|log.Ltime),
 	}
 
 	go manager.run()
@@ -471,10 +501,6 @@ func (manager *MasterManager) buildChain() {
 			} else {
 				manager.managerList[num] = *NewManager(manager.managerList[num-1].OutputEventChannel, manager.ControlEventChannel, id)
 			}
-			if logLevel >= LOG_DEBUG {
-				log.Printf("[DEBUG] Manager %v started in place %v", id, num)
-			}
-
 			num = num + 1
 		}
 
@@ -486,9 +512,85 @@ func (manager *MasterManager) handleResult(e Event) {
 	manager.results.responses = append(manager.results.responses, e.report.rawJSON)
 }
 
+func (errorHandler *ErrorHandler) run() {
+	logger := log.New(os.Stdout, "ErrHand: ", log.Ltime|log.Ldate)
+	for {
+		select {
+		case e := <-errorHandler.InputEventChannel:
+			e.tries = 0
+			errorHandler.errorList = append(errorHandler.errorList, e)
+			break
+		case _, ok := <-errorHandler.QuestionChannel:
+			if len(errorHandler.errorList) == 0 {
+				errorHandler.FinishedChannel <- true
+			} else {
+				errorHandler.FinishedChannel <- false
+			}
+			if !ok {
+				return
+			}
+			break
+		default:
+			if len(errorHandler.errorList) != 0 {
+				var tryEvent Event
+				tryEvent, errorHandler.errorList = errorHandler.errorList[0], errorHandler.errorList[1:]
+				var channel chan Event
+				switch tryEvent.senderID {
+				case "labs":
+					report := LabsReport{
+						Host: tryEvent.host,
+						Endpoints: []LabsEndpoint{
+							LabsEndpoint{
+								Grade: "70",
+							},
+						},
+						Port: 0,
+					}
+					tryEvent.report = &report
+					channel = errorHandler.channelMap["labs"]
+					break
+				case "ssl":
+					if errorHandler.useing["labs"] {
+						channel = errorHandler.channelMap["labs"]
+					} else {
+						channel = errorHandler.channelMap["ssl"]
+					}
+					break
+				case "obs":
+					channel = errorHandler.channelMap["obs"]
+					break
+				case "secH":
+					channel = errorHandler.channelMap["secH"]
+					break
+				}
+
+				select {
+				case channel <- tryEvent:
+					if logLevel <= LOG_DEBUG {
+						logger.Println("[DEBUG] Error cleared!", len(errorHandler.errorList))
+					}
+					break
+				case <-time.After(time.Millisecond * 100):
+					errorHandler.errorList = append(errorHandler.errorList, tryEvent)
+					break
+				}
+				if logLevel <= LOG_DEBUG {
+					logger.Printf("[DEBUG] Error list has %v Elements!", len(errorHandler.errorList))
+				}
+			}
+		}
+	}
+
+}
+
 func (manager *MasterManager) run() {
+	//starting needed managers and assign their channels
 	manager.buildChain()
-	channelMap := make(map[string]chan Event)
+	if logLevel <= LOG_DEBUG {
+		manager.logger.Println("[DEBUG] Manager-chain build successful")
+	}
+
+	var channelMap = make(map[string]chan Event, len(chain))
 	num := 0
 	for _, id := range chain {
 		if manager.useing[id] {
@@ -496,105 +598,238 @@ func (manager *MasterManager) run() {
 			num = num + 1
 		}
 	}
+	var errorChan = make(chan Event)
+	var errorQuestionChan = make(chan bool)
+	var errorDoneChan = make(chan bool)
+
+	//Starting ErrorHandler for failed entries
+	NewErrorHandler(errorChan, errorQuestionChan, errorDoneChan, channelMap, manager.useing)
+
+	if logLevel <= LOG_DEBUG {
+		manager.logger.Println("[DEBUG] ErrorHandler started successful")
+	}
+
+	//Input-Channel for Control is the last output channel
 	manager.InputEventChannel = manager.managerList[num-1].OutputEventChannel
-	//manager: ssl(falls da, immer manager[0]) labs obs secH sql
-	//bool Manager: useSsl useLabs useObs useSecH useSql {map}
+
+	//Get first host-enty for testing
 	host, hasNext := manager.hostProvider.next()
+
 	var e Event
+	//create empty Event for host if there is one
 	if hasNext {
-		e = Event{host, "master", 0, nil}
+		e = Event{host, "master", 0, nil, 0}
+		report := LabsReport{
+			Host: e.host,
+			Endpoints: []LabsEndpoint{
+				LabsEndpoint{
+					Grade: "70",
+				},
+			},
+			Port: 0,
+		}
+		e.report = &report
 	} else {
+		//Stop if there is no host in the list
+		if logLevel <= LOG_ERROR {
+			manager.logger.Println("[ERROR] The given HostList is empty. Stopping execution")
+		}
 		close(manager.InputEventChannel)
 		close(manager.ControlEventChannel)
 		return
 	}
+
 	hasElements := true
+	var closeWait chan Event
+	closeReady := false
+
+	//Starting Control-Loop
+	if logLevel <= LOG_NOTICE {
+		manager.logger.Println("[NOTICE] Starting Control-Loop")
+	}
 	for {
+		//If there are still unsent entries
 		if hasElements {
 			select {
-			// Handle assessment events (e.g., starting and finishing).
 			case manager.OutputEventChannel <- e:
-				log.Printf("Event for host %v send", e.host)
+				if logLevel <= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] %v is next in line for assessment", e.host)
+				}
+				//Get next host-entry
 				host, hasNext := manager.hostProvider.next()
 				if hasNext {
-					e = Event{host, "master", 0, nil}
+					e = Event{host, "master", 0, nil, 0}
+					report := LabsReport{
+						Host: e.host,
+						Endpoints: []LabsEndpoint{
+							LabsEndpoint{
+								Grade: "70",
+							},
+						},
+						Port: 0,
+					}
+					e.report = &report
 				} else {
+					//No more hosts in the list
+					if logLevel <= LOG_NOTICE {
+						manager.logger.Println("[NOTICE] Assessment for all hosts has started")
+					}
 					hasElements = false
 					close(manager.OutputEventChannel)
 				}
 				break
 			case cE := <-manager.ControlEventChannel:
+				//Handle Messages on the Control-Channel
 				switch cE.eventType {
 				case OUTPUT_CLOSE:
-					close(channelMap[cE.senderID])
-					break
-				case ERROR:
-					if cE.senderID == "ssl" {
-						cE.eventType = FINISHED
-						if manager.useing["labs"] {
-							channelMap["labs"] <- cE
-						} else {
-							channelMap["ssl"] <- cE
-						}
-					} else {
-						log.Printf("[ERROR] Host %v failed in %v", e.host, e.senderID)
-						//manager.handleError(e) //TODO
-						break
+					//Sender signals that his Output is ready for closing
+					closeWait = channelMap[cE.senderID]
+					closeReady = true
+					if logLevel <= LOG_INFO {
+						manager.logger.Printf("[INFO] Output for %v ready for closing", e.senderID)
 					}
-				}
-				break
-			case iE, ok := <-manager.InputEventChannel:
-				if !ok {
-					close(manager.ControlEventChannel)
-					return
-				}
-				manager.handleResult(iE)
-				break
-			default:
-				<-time.NewTimer(time.Duration(100) * time.Millisecond).C
-				break
-			}
-		} else {
-			select {
-			case cE := <-manager.ControlEventChannel:
-				switch cE.eventType {
-				case OUTPUT_CLOSE:
-					close(channelMap[cE.senderID])
 					break
 				case ERROR:
+					if logLevel <= LOG_INFO {
+						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
+					}
 					switch cE.senderID {
 					case "ssl":
 						cE.eventType = FINISHED
-						if manager.useing["labs"] {
-							channelMap["labs"] <- cE
-						} else {
-							channelMap["ssl"] <- cE
-						}
+						errorChan <- cE
+						break
+					case "labs":
+						cE.eventType = FINISHED
+						errorChan <- cE
 						break
 					case "obs":
 						cE.eventType = FINISHED
-						channelMap["obs"] <- cE
-						break
+						errorChan <- cE
 					case "secH":
 						cE.eventType = FINISHED
-						channelMap["secH"] <- cE
+						errorChan <- cE
+						break
 					default:
-						log.Printf("[ERROR] Host %v ultimately failed in %v", e.host, e.senderID)
-						//manager.handleError(e) //TODO
+						if logLevel <= LOG_WARNING {
+							manager.logger.Printf("[WARNING] Assessment of %v has ultimately failed in %v", e.host, e.senderID)
+						}
 						break
 					}
 
 				}
 				break
 			case iE, ok := <-manager.InputEventChannel:
+				//Handle incomming results
 				if !ok {
-					close(manager.MainChannel)
+					//Last result already handled. Finish execution
+					close(manager.ControlEventChannel)
+					if logLevel <= LOG_NOTICE {
+						manager.logger.Println("[NOTICE] Control is done")
+					}
 					return
 				}
+				if logLevel <= LOG_INFO {
+					manager.logger.Printf("[INFO] Results for %v received", e.host)
+				}
 				manager.handleResult(iE)
+				if logLevel <= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] Results for %v have been handled", e.host)
+				}
 				break
 			default:
-				<-time.NewTimer(time.Duration(5000) * time.Millisecond).C
+				//Check if there is a channel ready for closing
+				if closeReady {
+					//Are there still Errors to handle
+					errorQuestionChan <- true
+					b := <-errorDoneChan
+					if logLevel <= LOG_DEBUG {
+						manager.logger.Printf("[DEBUG] Error in ErrorHandler: %v", b)
+					}
+					if b {
+						if logLevel <= LOG_NOTICE {
+							manager.logger.Println("[NOTICE] Closing next channel in Chain")
+						}
+						close(closeWait)
+					}
+				}
+				break
+			}
+		} else {
+			select {
+			case cE := <-manager.ControlEventChannel:
+				//Handle Messages on the Control-Channel
+				switch cE.eventType {
+				case OUTPUT_CLOSE:
+					//Sender signals that his Output is ready for closing
+					closeWait = channelMap[cE.senderID]
+					closeReady = true
+					if logLevel <= LOG_INFO {
+						manager.logger.Printf("[INFO] Output for %v ready for closing", e.senderID)
+					}
+					break
+				case ERROR:
+					if logLevel <= LOG_INFO {
+						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
+					}
+					switch cE.senderID {
+					case "ssl":
+						cE.eventType = FINISHED
+						errorChan <- cE
+						break
+					case "labs":
+						cE.eventType = FINISHED
+						errorChan <- cE
+						break
+					case "obs":
+						cE.eventType = FINISHED
+						errorChan <- cE
+					case "secH":
+						cE.eventType = FINISHED
+						errorChan <- cE
+						break
+					default:
+						if logLevel <= LOG_WARNING {
+							manager.logger.Printf("[WARNING] Assessment of %v has ultimately failed in %v", e.host, e.senderID)
+						}
+						break
+					}
+
+				}
+				break
+			case iE, ok := <-manager.InputEventChannel:
+				//Handle incomming results
+				if !ok {
+					//Last result already handled. Finish execution
+					close(manager.ControlEventChannel)
+					if logLevel <= LOG_NOTICE {
+						manager.logger.Println("[NOTICE] Control is done")
+					}
+					return
+				}
+				if logLevel <= LOG_INFO {
+					manager.logger.Printf("[INFO] Results for %v received", e.host)
+				}
+				manager.handleResult(iE)
+				if logLevel <= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] Results for %v have been handled", e.host)
+				}
+				break
+			default:
+				//Check if there is a channel ready for closing
+				if closeReady {
+					//Are there still Errors to handle
+					errorQuestionChan <- true
+					b := <-errorDoneChan
+					if logLevel <= LOG_DEBUG {
+						manager.logger.Printf("[DEBUG] Error in ErrorHandler: %v", b)
+					}
+					if b {
+						if logLevel <= LOG_NOTICE {
+							manager.logger.Println("[NOTICE] Closing next channel in Chain")
+						}
+						close(closeWait)
+					}
+				}
 				break
 			}
 		}
@@ -743,19 +978,48 @@ func main() {
 	var conf_verbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace.")
 	var conf_version = flag.Bool("version", false, "Print version and API location information and exit")
 
-	var conf_securityheaders = flag.Bool("securityheaders", false, "Include a scan for security headers")
+	//Added Flags
+	var conf_securityheaders = flag.Bool("no-securityheaders", false, "Don't include a scan for security headers")
 	var conf_sql_retries = flag.Int("sql-retries", 3, "Number of retries if the SQL-connection fails")
-	var conf_observatory = flag.Bool("observatory", false, "Include a scan using the mozilla observatory API")
+	var conf_observatory = flag.Bool("no-observatory", false, "Don't include a scan using the mozilla observatory API")
+	var conf_ssllabs = flag.Bool("no-ssllabs", false, "Don't use SSLlabs-Scan")
+	var conf_ssltest = flag.Bool("no-ssltest", false, "Don't test hosts before starting Scan")
+	var conf_sql = flag.Bool("no-sql", false, "Don't write results into the database")
+
+	var conf_sslTries = flag.Int("test-tries", 2, "Number of tries if the sslTest fails")
+	var conf_labsTries = flag.Int("labs-tries", 2, "Number of tries if the sslLabs-Scan fails")
+	var conf_obsTries = flag.Int("obs-tries", 2, "Number of tries if the Observatory-Scan fails")
+	var conf_secHTries = flag.Int("sslTest-tries", 2, "Number of tries if the Securityheader-Scan fails")
 
 	flag.Parse()
 
+	sslTries = *conf_sslTries
+	obsTries = *conf_obsTries
+	labsTries = *conf_labsTries
+	secHTries = *conf_secHTries
+
+	if sslTries < 1 {
+		sslTries = 1
+	}
+
+	if labsTries < 1 {
+		labsTries = 1
+	}
+	if obsTries < 1 {
+		obsTries = 1
+	}
+
+	if secHTries < 1 {
+		secHTries = 1
+	}
+
 	globalSQLRetries = *conf_sql_retries
 
-	if *conf_observatory {
+	if !*conf_observatory {
 		globalObservatory = true
 	}
 
-	if *conf_securityheaders {
+	if !*conf_securityheaders {
 		globalSecurityheaders = true
 	}
 
@@ -821,8 +1085,13 @@ func main() {
 		globalInsecure = *conf_insecure
 	}
 
+	if *conf_ssllabs && *conf_ssltest && *conf_observatory && *conf_securityheaders {
+		log.Fatal("[ERROR] At least one can has to be run!")
+	}
+	var useing = map[string]bool{"labs": !*conf_ssllabs, "obs": !*conf_observatory, "secH": !*conf_securityheaders, "sql": !*conf_sql, "ssl": !*conf_ssltest}
+
 	hp := NewHostProvider(hostnames)
-	manager := NewMasterManager(hp, map[string]bool{"labs": true, "obs": true, "secH": true, "sql": true})
+	manager := NewMasterManager(hp, useing)
 
 	// Respond to events until all the work is done.
 	for {

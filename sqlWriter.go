@@ -34,22 +34,22 @@ func msUnixToTime(ms int64) time.Time {
 	return time.Unix(0, ms*int64(time.Millisecond))
 }
 
-func readSqlConfig(file string) SqlConfiguration {
+func readSqlConfig(file string, logger *log.Logger) SqlConfiguration {
 	configFile, err := os.Open("sql_config.json")
 	if err != nil {
-		log.Fatalf("[ERROR] Opening specified sql_config failed: %v", err)
+		logger.Fatalf("[ERROR] Opening specified sql_config failed: %v", err)
 	}
 	decoder := json.NewDecoder(configFile)
 	configuration := SqlConfiguration{}
 	decoderErr := decoder.Decode(&configuration)
 	if decoderErr != nil {
-		log.Fatalf("[ERROR] Decoding sql_config failed: %v", err)
+		logger.Fatalf("[ERROR] Decoding sql_config failed: %v", err)
 	}
 	configFile.Close()
 	return configuration
 }
 
-func writeToDb(report *LabsReport) error {
+func writeToDb(report *LabsReport, logger *log.Logger) error {
 	// Insert Infos into Database
 	currentReport := report
 	// Go through the endpoints and add information from within to variables that can be used
@@ -154,7 +154,7 @@ func writeToDb(report *LabsReport) error {
 			observatoryDescriptions = currentReport.ObservatoryResults.ToIssueString()
 		}
 
-		sqlConfiguration := readSqlConfig("sql_config.json")
+		sqlConfiguration := readSqlConfig("sql_config.json", logger)
 		var table string = sqlConfiguration.SqlTable
 		query := fmt.Sprintf(`Insert into %v (DomainName, DomainDepth, IpAddress, Port, CheckTime, Grade, HasWarnings,
 			IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer,
@@ -177,14 +177,14 @@ func writeToDb(report *LabsReport) error {
 			sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Connecting to SQL-Server: %v", err)
+				logger.Printf("[ERROR] Connecting to SQL-Server: %v", err)
 			}
 			db.Close()
 			return err
 		}
 		if err := db.Ping(); err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Can't ping SQL-Server: %v", err)
+				logger.Printf("[ERROR] Can't ping SQL-Server: %v", err)
 			}
 			db.Close()
 			return err
@@ -192,7 +192,7 @@ func writeToDb(report *LabsReport) error {
 		tx, err := db.Begin()
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Can't begin SQL-Transaction: %v", err)
+				logger.Printf("[ERROR] Can't begin SQL-Transaction: %v", err)
 			}
 			db.Close()
 			return err
@@ -200,7 +200,7 @@ func writeToDb(report *LabsReport) error {
 		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, currentEndpoint.Details.Cert.MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
-				log.Printf("[ERROR] Error executing SQL-Transaction: %v", err)
+				logger.Printf("[ERROR] Error executing SQL-Transaction: %v", err)
 			}
 			tx.Rollback()
 			db.Close()
@@ -215,7 +215,7 @@ func writeToDb(report *LabsReport) error {
 	return nil
 }
 
-func NewSqlAssessment(e Event, eventChannel chan Event) {
+func NewSqlAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "sql"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
@@ -223,18 +223,18 @@ func NewSqlAssessment(e Event, eventChannel chan Event) {
 
 	for i := 0; i < maxRetries+1; i++ {
 		timeout := (float32(i) + 1.0) * 0.5
-		err := writeToDb(e.report)
+		err := writeToDb(e.report, logger)
 		if err == nil {
 			break
 		}
 		if i == maxRetries {
-			log.Printf("[ERROR] Connection to SQL-Server failed after %v retries: %v", maxRetries, err)
+			logger.Printf("[ERROR] Connection to SQL-Server failed after %v retries: %v", maxRetries, err)
 			e.eventType = INTERNAL_ASSESSMENT_FAILED
 			eventChannel <- e
 			return
 		}
 		if logLevel >= LOG_INFO {
-			log.Printf("[INFO] Connection to SQL-Server failed, retrying in %v seconds", timeout)
+			logger.Printf("[INFO] Connection to SQL-Server failed, retrying in %v seconds", timeout)
 		}
 		time.Sleep(time.Duration(timeout) * time.Second)
 	}
@@ -243,7 +243,7 @@ func NewSqlAssessment(e Event, eventChannel chan Event) {
 }
 
 func (manager *Manager) startSqlAssessment(e Event) {
-	go NewSqlAssessment(e, manager.InternalEventChannel)
+	go NewSqlAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSqlAssessments++
 }
 
@@ -255,28 +255,28 @@ func (manager *Manager) sqlRun() {
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSqlAssessments--
-				log.Printf("[ERROR] sqlWrite for %v failed", e.host)
+				manager.logger.Printf("[ERROR] sqlWrite for %v failed", e.host)
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+					manager.logger.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
 				}
 				//TODO ERROR handeling
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] sqlWrite starting: %v", e.host)
+					manager.logger.Printf("[INFO] sqlWrite starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
 				if logLevel >= LOG_INFO {
-					log.Printf("[INFO] sqlWrite for %v finished", e.host)
+					manager.logger.Printf("[INFO] sqlWrite for %v finished", e.host)
 				}
 
 				activeSqlAssessments--
 
 				if logLevel >= LOG_NOTICE {
-					log.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+					manager.logger.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
 				}
 				// We have a finished assessment now that we can add third-party information to
 				// And we won't re-query these third partys by relying on the ssllabs-scan polling
@@ -286,7 +286,7 @@ func (manager *Manager) sqlRun() {
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_DEBUG {
-					log.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
 				}
 			}
 
