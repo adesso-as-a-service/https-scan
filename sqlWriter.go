@@ -19,7 +19,7 @@ var globalSQLRetries = -1
 var activeSqlAssessments = 0
 
 // The maximum number of assessments we can have in progress at any one time.
-var maxSqlAssessments = 10
+var maxSqlAssessments = 5
 
 type SqlConfiguration struct {
 	SqlServer     string
@@ -169,10 +169,10 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			HpkpPolicy, HpkpRoPolicy, HasSct, chainPinSha256, chainSha1Hashes, Rc4Only, ChaCha20Preference, 
 			DrownVulnerable, MustStaple, OpenSSLLuckyMinus20, SecurityHeadersGrade, SecurityHeadersXFrameOptions, 
 			SecurityHeadersStrictTransportSecurity, SecurityHeadersXContentTypeOptions, SecurityHeadersXXSSProtection, 
-			ObservatoryRating, ObservatoryPassFail, ObservatoryIssues)
+			SecurityHeadersContentSecurityPolicy, SecurityHeadersReferrerPolicy, ObservatoryRating, ObservatoryPassFail, ObservatoryIssues)
 			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, table)
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`, table)
 		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
 			sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
 		if err != nil {
@@ -197,7 +197,7 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			db.Close()
 			return err
 		}
-		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, currentEndpoint.Details.Cert.MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions)
+		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, currentEndpoint.Details.Cert.MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.HeaderScore.ContentSecurityPolicy, currentReport.HeaderScore.ReferrerPolicy, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
 				logger.Printf("[ERROR] Error executing SQL-Transaction: %v", err)
@@ -207,7 +207,9 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			return err
 		}
 		if err == nil {
-			fmt.Println(result.RowsAffected())
+			if logLevel >= LOG_TRACE {
+				fmt.Println(result.RowsAffected())
+			}
 			tx.Commit()
 		}
 		db.Close()
@@ -248,36 +250,35 @@ func (manager *Manager) startSqlAssessment(e Event) {
 }
 
 func (manager *Manager) sqlRun() {
-	moreSqlAssessments := true
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
-				activeSqlAssessments--
-				manager.logger.Printf("[ERROR] sqlWrite for %v failed", e.host)
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
 				}
-				//TODO ERROR handeling
+				activeSqlAssessments--
+				e.eventType = ERROR
+				if logLevel >= LOG_ERROR {
+					manager.logger.Printf("[ERROR] sqlWrite for %v ultimately failed", e.host)
+				}
+				manager.ControlEventChannel <- e
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] sqlWrite starting: %v", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] sqlWrite starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] sqlWrite for %v finished", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] sqlWrite for %v finished", e.host)
 				}
 
 				activeSqlAssessments--
 
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SQL Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
-				}
 				// We have a finished assessment now that we can add third-party information to
 				// And we won't re-query these third partys by relying on the ssllabs-scan polling
 
@@ -285,41 +286,32 @@ func (manager *Manager) sqlRun() {
 				e.senderID = "sql"
 				manager.OutputEventChannel <- e
 
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSqlAssessments, moreSqlAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v (more: %v)", activeSqlAssessments)
 				}
 			}
 
-			// Are we done?
-			if (activeSqlAssessments == 0) && (moreSqlAssessments == false) {
-				manager.finish("sql")
-				return
-			}
-
 			break
-
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeSqlAssessments == 0)
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
 
-			if moreSqlAssessments {
-				if activeSqlAssessments < maxSqlAssessments {
-					e, running := <-manager.InputEventChannel
-					if running {
-						manager.startSqlAssessment(e)
-					} else {
-						// We've run out of hostnames and now just need
-						// to wait for all the assessments to complete.
-						moreSqlAssessments = false
-
-						if activeSqlAssessments == 0 {
-							manager.finish("sql")
-							return
-						}
+			if activeSqlAssessments < maxSqlAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
 					}
+					manager.startSqlAssessment(e)
+				case <-time.After(time.Millisecond * 100):
+					break
 				}
 			}
+
 			break
 		}
 	}

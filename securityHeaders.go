@@ -1,19 +1,22 @@
 package main
 
 import (
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 var globalSecurityheaders bool
 
 //How often do we try
-var secHTries = 2
+var secHTries = 3
 
 // How many assessment do we have in progress?
 var activeSecHAssessments = 0
@@ -29,12 +32,139 @@ type Securityheaders struct {
 	StrictTransportSecurity string
 	XContentTypeOptions     string
 	XXSSProtection          string
+	ContentSecurityPolicy   string
+	ReferrerPolicy          string
+}
+
+func parseResponse(r io.Reader) *Securityheaders {
+	z := html.NewTokenizer(r)
+	var secH Securityheaders
+	isRaw := false
+	isMissing := false
+
+	for {
+		tt := z.Next()
+		switch {
+		case tt == html.ErrorToken:
+			return &secH
+		case tt == html.EndTagToken:
+			t := z.Token()
+			if t.Data == "table" {
+				if isRaw {
+					isRaw = false
+				}
+				if isMissing {
+					isMissing = false
+				}
+			}
+		case tt == html.StartTagToken:
+			t := z.Token()
+			switch {
+			case t.Data == "div":
+				hh := z.Next()
+				if hh == html.TextToken {
+					h := z.Token()
+					switch h.Data {
+					case "Raw Headers":
+						isRaw = true
+						break
+					case "Missing Headers":
+						isRaw = false
+						isMissing = true
+						break
+					}
+
+				}
+			case t.Data == "th":
+				hh := z.Next()
+				if hh == html.TextToken {
+					h := z.Token()
+					switch h.Data {
+					case "X-Frame-Options":
+						if isMissing {
+							secH.XFrameOptions = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.XFrameOptions = h.Data
+						}
+
+					case "Strict-Transport-Security":
+						if isMissing {
+							secH.StrictTransportSecurity = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.StrictTransportSecurity = h.Data
+						}
+
+					case "X-Content-Type-Options":
+						if isMissing {
+							secH.XContentTypeOptions = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.XContentTypeOptions = h.Data
+						}
+
+					case "X-XSS-Protection":
+						if isMissing {
+							secH.XXSSProtection = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.XXSSProtection = h.Data
+						}
+
+					case "Content-Security-Policy":
+						if isMissing {
+							secH.ContentSecurityPolicy = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.ContentSecurityPolicy = h.Data
+						}
+
+					case "Referrer-Policy":
+						if isMissing {
+							secH.ReferrerPolicy = "missing"
+							break
+						}
+						if isRaw {
+							for hh = z.Next(); hh != html.TextToken; hh = z.Next() {
+							}
+							h := z.Token()
+							secH.ReferrerPolicy = h.Data
+						}
+
+					}
+				}
+
+			}
+
+		}
+	}
+
 }
 
 // invokeSecurityHeaders is called by a LabsReport object to query the securityheaders.io
 // API for grading and adds the result to the object
 func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSSL bool, logger *log.Logger) error {
-	var securityheaders Securityheaders
 	var apiURL string
 	var hostURL string
 
@@ -51,39 +181,18 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	}
 
 	// Get http Header from the securityheaders API to get the grading of the scanned host
-	response, err := http.Head(apiURL)
+	response, err := http.Get(apiURL)
 	if err != nil {
 		if logLevel >= LOG_ERROR {
 			logger.Printf("[ERROR] Error contacting securityheaders.io with host %v : %v", host, err)
 		}
 	}
+	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		if logLevel >= LOG_ERROR {
 			logger.Printf("[ERROR] securityheaders.io returned non-200 status for host %v : %v", host, response.Status)
 		}
-		err = errors.New("Security Header Assessment failed.")
-		return err
-	}
-
-	// Disable security checks to get information even if cert is bad
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-
-	//Get the HTTP head of the host directly to get the security headers and their configuration
-	headerResponse, err := client.Head(hostURL)
-	if err != nil {
-		if logLevel >= LOG_ERROR {
-			logger.Printf("[ERROR] Error getting headers of host %v : %v", host, err)
-		}
-		return err
-	}
-	if response.StatusCode != http.StatusOK {
-		if logLevel >= LOG_ERROR {
-			logger.Printf("[ERROR] host returned non-200 status when getting headers %v : %v", host, response.Status)
-		}
-		err = errors.New("Security Header Assessment failed.")
+		err = errors.New("security Header Assessment failed")
 		return err
 	}
 
@@ -95,15 +204,21 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 		}
 		return err
 	}
+	//Parse the Results
+	securityheaders := parseResponse(response.Body)
 
 	// Unmarshal the json object and set the grade and security-header configuration
 	// Of the object we've been working on
 	json.Unmarshal(xScore, &securityheaders)
-	securityheaders.StrictTransportSecurity = headerResponse.Header.Get("Strict-Transport-Security")
-	securityheaders.XContentTypeOptions = headerResponse.Header.Get("X-Content-Type-Options")
-	securityheaders.XFrameOptions = headerResponse.Header.Get("X-Frame-Options")
-	securityheaders.XXSSProtection = headerResponse.Header.Get("X-XSS-Protection")
-	analyzeResponse.HeaderScore = securityheaders
+	if securityheaders.Score == "" {
+		if supportsSSL {
+			return errors.New("Retry this")
+		} else {
+			return errors.New("Securityheader.io could not deliver a result")
+		}
+
+	}
+	analyzeResponse.HeaderScore = *securityheaders
 	return nil
 }
 
@@ -111,8 +226,21 @@ func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "secH"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
-	err := e.report.invokeSecurityHeaders(e.report.Host, true, logger)
+	err := e.report.invokeSecurityHeaders(e.host, e.https, logger)
 	if err != nil {
+		//If securityheaders is unreachable for https try again
+		if strings.Contains(err.Error(), "Retry") {
+			if logLevel >= LOG_NOTICE {
+				logger.Printf("[NOTICE] Retrying securityheades-Scan without https for %v", e.host)
+
+			}
+			err := e.report.invokeSecurityHeaders(e.host, false, logger)
+			if err == nil {
+				e.eventType = INTERNAL_ASSESSMENT_COMPLETE
+				eventChannel <- e
+				return
+			}
+		}
 		if logLevel >= LOG_ERROR {
 			logger.Printf("[ERROR] Could not invoke security headers for host %v: %v", e.report.Host, err)
 
@@ -131,82 +259,72 @@ func (manager *Manager) startSecHAssessment(e Event) {
 }
 
 func (manager *Manager) secHRun() {
-	moreSecHAssessments := true
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSecHAssessments--
-				manager.logger.Printf("[ERROR] Securityheader Scan for %v failed", e.host)
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
-				}
 				e.tries++
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] SecHead-Scan for %v failed for the %v. time", e.host, e.tries)
+				}
 				if e.tries < secHTries {
 					manager.startSecHAssessment(e)
 				} else {
 					e.eventType = ERROR
+					if logLevel >= LOG_ERROR {
+						manager.logger.Printf("[ERROR] SecHead-Scan for %v ultimately failed", e.host)
+					}
 					manager.ControlEventChannel <- e
+				}
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSecHAssessments)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Securityheader Scan starting: %v", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] SecHead-Scan starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Securityheader Scan for %v finished", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] SecHead-Scan for %v finished", e.host)
 				}
 
 				activeSecHAssessments--
 
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SecH Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
-				}
 				e.eventType = FINISHED
 				e.senderID = "secH"
 				manager.OutputEventChannel <- e
-
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeSecHAssessments, moreSecHAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSecHAssessments)
 				}
 			}
-
-			// Are we done?
-			if (activeSecHAssessments == 0) && (moreSecHAssessments == false) {
-				manager.finish("secH")
-				return
-			}
-
 			break
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeSecHAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
 
-			if moreSecHAssessments {
-				if activeSecHAssessments < maxSecHAssessments {
-					e, running := <-manager.InputEventChannel
-					if running {
-						e.tries = 0
-						manager.startSecHAssessment(e)
-					} else {
-						// We've run out of hostnames and now just need
-						// to wait for all the assessments to complete.
-						moreSecHAssessments = false
-
-						if activeSecHAssessments == 0 {
-							manager.finish("secH")
-							return
-						}
+			if activeSecHAssessments < maxSecHAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
 					}
+					manager.startSecHAssessment(e)
+				case <-time.After(time.Millisecond * 100):
+					break
 				}
 			}
+
 			break
 		}
 	}

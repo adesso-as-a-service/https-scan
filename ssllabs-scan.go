@@ -92,8 +92,8 @@ func invokeGetRepeatedly(url string, logger *log.Logger) (*http.Response, []byte
 					if currentLabsAssessments != i {
 						currentLabsAssessments = i
 
-						if logLevel >= LOG_DEBUG {
-							logger.Printf("[DEBUG] Server set current assessments to %v", headerValue)
+						if logLevel >= LOG_NOTICE {
+							logger.Printf("[NOTICE] Server set current assessments to %v", headerValue)
 						}
 					}
 				} else {
@@ -116,8 +116,8 @@ func invokeGetRepeatedly(url string, logger *log.Logger) (*http.Response, []byte
 							logger.Fatalf("[ERROR] Server doesn't allow further API requests")
 						}
 
-						if logLevel >= LOG_DEBUG {
-							logger.Printf("[DEBUG] Server set maximum assessments to %v", headerValue)
+						if logLevel >= LOG_NOTICE {
+							logger.Printf("[NOTICE] Server set maximum assessments to %v", headerValue)
 						}
 					}
 				} else {
@@ -274,6 +274,11 @@ func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	for {
 		myResponse, err := invokeAnalyze(e.host, startNew, globalFromCache, logger)
 		if err != nil {
+			if strings.Contains(err.Error(), "429") {
+				e.eventType = 429
+				eventChannel <- e
+				return
+			}
 			e.eventType = INTERNAL_ASSESSMENT_FAILED
 			eventChannel <- e
 			return
@@ -289,6 +294,7 @@ func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 			// consistent results.
 			if myResponse.StartTime > startTime {
 				e.eventType = INTERNAL_ASSESSMENT_FAILED
+				logger.Println("startTime diffrence")
 				eventChannel <- e
 				return
 			} else {
@@ -314,6 +320,9 @@ func (manager *Manager) startLabsAssessment(e Event) {
 }
 
 func (manager *Manager) labsRun() {
+	if logLevel >= LOG_NOTICE {
+		manager.logger.Println("[NOTICE] SSLLabs-Manager started")
+	}
 	transport := &http.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: globalInsecure},
 		DisableKeepAlives: false,
@@ -335,9 +344,9 @@ func (manager *Manager) labsRun() {
 		manager.logger.Printf("[INFO] SSL Labs v%v (criteria version %v)", labsInfo.EngineVersion, labsInfo.CriteriaVersion)
 	}
 
-	if logLevel >= LOG_NOTICE {
+	if logLevel >= LOG_INFO {
 		for _, message := range labsInfo.Messages {
-			manager.logger.Printf("[NOTICE] Server message: %v", message)
+			manager.logger.Printf("[INFO] Server message: %v", message)
 		}
 	}
 
@@ -348,8 +357,6 @@ func (manager *Manager) labsRun() {
 			manager.logger.Printf("[WARNING] You're not allowed to request new assessments")
 		}
 	}
-
-	moreLabsAssessments := true
 
 	if labsInfo.NewAssessmentCoolOff >= 1000 {
 		globalNewAssessmentCoolOff = 100 + labsInfo.NewAssessmentCoolOff
@@ -364,15 +371,30 @@ func (manager *Manager) labsRun() {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
-				manager.logger.Printf("[ERROR] ssllabs-scan for %v failed!", e.host)
+
 				activeLabsAssessments--
 				e.tries++
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] SSLLabs-Assessment for %v failed for the %v. time", e.host, e.tries)
+				}
 				if e.tries < labsTries {
 					manager.startLabsAssessment(e)
 				} else {
 					e.eventType = ERROR
+					if logLevel >= LOG_ERROR {
+						manager.logger.Printf("[ERROR] SSLLabs-Assessment for %v ultimately failed", e.host)
+					}
 					manager.ControlEventChannel <- e
 				}
+			}
+
+			if e.eventType == 429 {
+				activeLabsAssessments--
+				e.eventType = REERROR
+				if logLevel >= LOG_ERROR {
+					manager.logger.Printf("[ERROR] SSLLabs-Assessment 429 Error for %v", e.host)
+				}
+				manager.ControlEventChannel <- e
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
@@ -382,16 +404,16 @@ func (manager *Manager) labsRun() {
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_INFO {
+				if logLevel >= LOG_DEBUG {
 					msg := ""
 
 					if len(e.report.Endpoints) == 0 {
 						msg = fmt.Sprintf("[WARN] Assessment failed: %v (%v)", e.host, e.report.StatusMessage)
 					} else if len(e.report.Endpoints) > 1 {
-						msg = fmt.Sprintf("[INFO] Assessment complete: %v (%v hosts in %v seconds)",
+						msg = fmt.Sprintf("[DEBUG] Assessment complete: %v (%v hosts in %v seconds)",
 							e.host, len(e.report.Endpoints), (e.report.TestTime-e.report.StartTime)/1000)
 					} else {
-						msg = fmt.Sprintf("[INFO] Assessment complete: %v (%v host in %v seconds)",
+						msg = fmt.Sprintf("[DEBUG] Assessment complete: %v (%v host in %v seconds)",
 							e.host, len(e.report.Endpoints), (e.report.TestTime-e.report.StartTime)/1000)
 					}
 
@@ -416,42 +438,33 @@ func (manager *Manager) labsRun() {
 
 				manager.OutputEventChannel <- e
 
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeLabsAssessments, moreLabsAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeLabsAssessments)
 				}
 			}
 
-			// Are we done?
-			if (activeLabsAssessments == 0) && (moreLabsAssessments == false) {
-				manager.finish("labs")
-				return
-			}
-
 			break
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeLabsAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(globalNewAssessmentCoolOff) * time.Millisecond).C
 
-			if moreLabsAssessments {
-				if currentLabsAssessments < maxLabsAssessments {
-					e, running := <-manager.InputEventChannel
-					if running {
-						e.tries = 0
-						manager.startLabsAssessment(e)
-					} else {
-						// We've run out of hostnames and now just need
-						// to wait for all the assessments to complete.
-						moreLabsAssessments = false
-
-						if activeLabsAssessments == 0 {
-							manager.finish("labs")
-							return
-						}
+			if currentLabsAssessments < maxLabsAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
 					}
+					manager.startLabsAssessment(e)
+				case <-time.After(time.Millisecond * 100):
+					break
 				}
 			}
+
 			break
 		}
 	}

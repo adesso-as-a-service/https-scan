@@ -353,82 +353,76 @@ func (manager *Manager) startObsAssessment(e Event) {
 }
 
 func (manager *Manager) obsRun() {
-	moreObsAssessments := true
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
-				manager.logger.Printf("[ERROR] Observatory Scan for %v failed", e.host)
-				//TODO ERROR handeling
 				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+					manager.logger.Printf("Obs Active assessments: %v ", activeObsAssessments)
 				}
 				activeObsAssessments--
 				e.tries++
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Observatory for %v failed for the %v. time", e.host, e.tries)
+				}
 				if e.tries < obsTries {
 					manager.startObsAssessment(e)
 				} else {
 					e.eventType = ERROR
+					if logLevel >= LOG_ERROR {
+						manager.logger.Printf("[ERROR] Observatory for %v ultimately failed", e.host)
+					}
 					manager.ControlEventChannel <- e
+				}
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeObsAssessments)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Observatory Scan starting: %v", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] Observatory Scan starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Observatory Scan for %v finished", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] Observatory Scan for %v finished", e.host)
 				}
 
 				activeObsAssessments--
 
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("Obs Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
-				}
 				e.eventType = FINISHED
 				e.senderID = "obs"
 				manager.OutputEventChannel <- e
-
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Active assessments: %v (more: %v)", activeObsAssessments, moreObsAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeObsAssessments)
 				}
-			}
 
-			// Are we done?
-			if (activeObsAssessments == 0) && (moreObsAssessments == false) {
-				manager.finish("obs")
-				return
 			}
-
 			break
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeObsAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
-			if moreObsAssessments {
-				if activeObsAssessments < maxObsAssessments {
-					e, running := <-manager.InputEventChannel
-					if running {
-						e.tries = 0
-						manager.startObsAssessment(e)
-					} else {
-						// We've run out of hostnames and now just need
-						// to wait for all the assessments to complete.
-						moreObsAssessments = false
 
-						if activeObsAssessments == 0 {
-							manager.finish("obs")
-							return
-						}
+			if activeObsAssessments < maxObsAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
 					}
+					manager.startObsAssessment(e)
+				case <-time.After(time.Millisecond * 100):
+					break
 				}
 			}
+
 			break
 		}
 	}

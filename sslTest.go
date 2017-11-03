@@ -26,8 +26,8 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	conn, err := tls.DialWithDialer(dialer, "tcp", e.host+":443", nil)
 	if err == nil {
 		conn.Close()
-		if logLevel >= LOG_INFO {
-			logger.Printf("[INFO] SSL available for %v, continuing to API", e.host)
+		if logLevel >= LOG_DEBUG {
+			logger.Printf("[DEBUG] SSL available for %v, continuing to API", e.host)
 		}
 	} else {
 		if !strings.Contains(err.Error(), "x509") {
@@ -35,14 +35,22 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 				logger.Printf("[DEBUG] SSL unavailable for %v: %v", e.host, err.Error())
 			}
 		} else {
-			if logLevel >= LOG_INFO {
-				logger.Printf("[INFO] SSL available for %v, with error: %v", e.host, err.Error())
+			if logLevel >= LOG_DEBUG {
+				logger.Printf("[DEBUG] SSL available for %v, with error: %v", e.host, err.Error())
+
 			}
+			e.eventType = INTERNAL_ASSESSMENT_COMPLETE
+			ip, _ := net.LookupIP(e.host)
+			if ip != nil {
+				e.report.Endpoints[0].IpAddress = ip[0].String()
+			}
+			eventChannel <- e
+			return
 		}
 		conn, err := net.DialTimeout("tcp", e.host+":http", 60*time.Second)
 		if err != nil {
-			if logLevel >= LOG_ERROR {
-				logger.Printf("[ERROR] HTTP not available for %v, with error: %v", e.host, err.Error())
+			if logLevel >= LOG_INFO {
+				logger.Printf("[INFO] HTTP not available for %v, with error: %v", e.host, err.Error())
 			}
 			e.eventType = INTERNAL_ASSESSMENT_FATAL
 			eventChannel <- e
@@ -62,6 +70,10 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 	}
 
+	ip, _ := net.LookupIP(e.host)
+	if ip != nil {
+		e.report.Endpoints[0].IpAddress = ip[0].String()
+	}
 	e.eventType = INTERNAL_ASSESSMENT_COMPLETE
 	eventChannel <- e
 }
@@ -72,84 +84,86 @@ func (manager *Manager) startSslAssessment(e Event) {
 }
 
 func (manager *Manager) sslRun() {
-	moreSslAssessments := true
+	if logLevel >= LOG_NOTICE {
+		manager.logger.Println("[NOTICE] SSLTest-Manager started")
+	}
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
 		case e := <-manager.InternalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSslAssessments--
-				manager.logger.Printf("[ERROR] SSL Test for %v failed", e.host)
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
-				}
 				e.tries++
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] SSLTest for %v failed for the %v. time", e.host, e.tries)
+				}
 				if e.tries < sslTries {
 					manager.startSslAssessment(e)
 				} else {
 					e.eventType = ERROR
+					if logLevel >= LOG_ERROR {
+						manager.logger.Printf("[ERROR] SSLTest for %v ultimately failed", e.host)
+					}
+					e.https = false
 					manager.ControlEventChannel <- e
+				}
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSslAssessments)
 				}
 			}
 			if e.eventType == INTERNAL_ASSESSMENT_FATAL {
 				activeSslAssessments--
-				manager.logger.Printf("[ERROR] SSL Test for %v fateally failed", e.host)
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSslAssessments)
+				}
+				if logLevel >= LOG_ERROR {
+					manager.logger.Printf("[ERROR] Connection to %v not possible", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO]SSL Test starting: %v", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] SSL Test starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] SSL Test for %v finished", e.host)
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] SSL Test for %v finished", e.host)
 				}
 
 				activeSslAssessments--
-				if logLevel >= LOG_NOTICE {
-					manager.logger.Printf("SSL TEST Active assessments: %v (more: %v)", activeSslAssessments, moreSslAssessments)
-				}
+
 				e.eventType = FINISHED
-				e.senderID = "ssl"
+				e.https = true
 				manager.OutputEventChannel <- e
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSslAssessments)
+				}
 
 			}
-
-			// Are we done?
-			if (activeSslAssessments == 0) && (moreSslAssessments == false) {
-				manager.finish("ssl")
-				return
-			}
-
 			break
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeSslAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
-			if moreSslAssessments {
-				if activeSslAssessments < maxSslAssessments {
-					e, running := <-manager.InputEventChannel
-					if running {
-						e.tries = 0
-						manager.startSslAssessment(e)
-					} else {
-						// We've run out of hostnames and now just need
-						// to wait for all the assessments to complete.
-						moreSslAssessments = false
 
-						if activeSslAssessments == 0 {
-							manager.finish("ssl")
-							return
-						}
+			if activeSslAssessments < maxSslAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
 					}
+					manager.startSslAssessment(e)
+				case <-time.After(time.Millisecond * 100):
+					break
 				}
 			}
+
 			break
 		}
 	}
