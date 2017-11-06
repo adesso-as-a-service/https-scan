@@ -106,6 +106,7 @@ func (manager *Manager) sslRun() {
 					}
 					e.https = false
 					e.report.Reachable = "http"
+					e.report.Endpoints[0].Grade = "70"
 					manager.ControlEventChannel <- e
 				}
 				if logLevel >= LOG_INFO {
@@ -122,6 +123,7 @@ func (manager *Manager) sslRun() {
 				}
 				e.eventType = FATAL
 				e.report.Reachable = "no"
+				e.report.Endpoints[0].Grade = "0"
 				manager.ControlEventChannel <- e
 			}
 

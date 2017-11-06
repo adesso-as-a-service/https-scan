@@ -494,18 +494,6 @@ func (errorHandler *ErrorHandler) run() {
 					//Select target channel for error
 					switch tryEvent.senderID {
 					case "labs":
-						//add empty report if failed in SSLLabs
-						report := LabsReport{
-							Host:      tryEvent.host,
-							Reachable: "unknown",
-							Endpoints: []LabsEndpoint{
-								LabsEndpoint{
-									Grade: "70",
-								},
-							},
-							Port: 0,
-						}
-						tryEvent.report = &report
 						channel = errorHandler.channelMap["labs"][1]
 						break
 					case "ssl":
@@ -688,7 +676,7 @@ func (manager *MasterManager) run() {
 			Reachable: "unknown",
 			Endpoints: []LabsEndpoint{
 				LabsEndpoint{
-					Grade: "70",
+					Grade: "",
 				},
 			},
 			Port: 0,
@@ -726,7 +714,7 @@ func (manager *MasterManager) run() {
 						Reachable: "unknown",
 						Endpoints: []LabsEndpoint{
 							LabsEndpoint{
-								Grade: "70",
+								Grade: "",
 							},
 						},
 						Port: 0,
