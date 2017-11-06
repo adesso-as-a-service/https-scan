@@ -1,1 +1,1 @@
-SELECT * FROM Certificates_Test WHERE CreationDate >= '2017/11/03 14:41:00.000' AND SecurityHeadersGrade = '';
+SELECT * FROM Certificates_Test WHERE CreationDate >= '2017/11/03 18:08:00.000';

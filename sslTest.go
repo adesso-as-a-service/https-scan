@@ -105,6 +105,7 @@ func (manager *Manager) sslRun() {
 						manager.logger.Printf("[ERROR] SSLTest for %v ultimately failed", e.host)
 					}
 					e.https = false
+					e.report.Reachable = "http"
 					manager.ControlEventChannel <- e
 				}
 				if logLevel >= LOG_INFO {
@@ -119,6 +120,9 @@ func (manager *Manager) sslRun() {
 				if logLevel >= LOG_ERROR {
 					manager.logger.Printf("[ERROR] Connection to %v not possible", e.host)
 				}
+				e.eventType = FATAL
+				e.report.Reachable = "no"
+				manager.ControlEventChannel <- e
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
@@ -136,6 +140,7 @@ func (manager *Manager) sslRun() {
 
 				e.eventType = FINISHED
 				e.https = true
+				e.report.Reachable = "https"
 				manager.OutputEventChannel <- e
 				if logLevel >= LOG_INFO {
 					manager.logger.Printf("[INFO] Active assessments: %v", activeSslAssessments)

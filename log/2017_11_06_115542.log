@@ -1,0 +1,13 @@
+Control: 2017/11/06 11:55:42 [NOTICE] Control-Manager started
+Control: 2017/11/06 11:55:42 [NOTICE] Starting Control-Loop
+SSLTest: 2017/11/06 11:55:42 [NOTICE] SSLTest-Manager started
+SSLLabs: 2017/11/06 11:55:42 [NOTICE] SSLLabs-Manager started
+ErrHand: 2017/11/06 11:55:42 [NOTICE] ErrorHandler started
+Control: 2017/11/06 11:55:42 [NOTICE] Assessment for all hosts has started
+SSLLabs: 2017/11/06 11:55:43 [NOTICE] Server set current assessments to 0
+SSLLabs: 2017/11/06 11:55:43 [NOTICE] Server set maximum assessments to 25
+SSLLabs: 2017/11/06 11:55:45 [NOTICE] Server set current assessments to 1
+SSLLabs: 2017/11/06 11:57:24 [NOTICE] Server set current assessments to 0
+SSLLabs: 2017/11/06 11:57:24 [NOTICE] Server set maximum assessments to 24
+SecH:    2017/11/06 11:57:30 [NOTICE] Retrying securityheaders-scan without https for ar.onemodel.jpmorgan.sh02.de
+Control: 2017/11/06 11:57:35 [NOTICE] Scan complete

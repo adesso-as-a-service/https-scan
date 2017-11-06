@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/url"
@@ -60,6 +61,8 @@ var globalFromCache = false
 var globalMaxAge = 0
 
 var globalInsecure = false
+
+var logFile *os.File
 
 //Contains shortNames for all managers, also sets the manager order
 var chain = []string{"ssl", "labs", "obs", "secH", "sql"}
@@ -310,6 +313,7 @@ type LabsEndpoint struct {
 type LabsReport struct {
 	Host               string
 	Port               int
+	Reachable          string
 	Protocol           string
 	IsPublic           bool
 	Status             string
@@ -351,6 +355,7 @@ type Event struct {
 }
 
 const (
+	FATAL    = -3 // direct to sql, if used
 	REERROR  = -2 // Retrying Error
 	ERROR    = -1 // Try Next Manager Error
 	FINISHED = 0
@@ -405,23 +410,23 @@ func NewManager(InputEventChannel chan Event, ControlEventChannel chan Event, id
 func (manager *Manager) run(id string) error {
 	switch {
 	case id == "ssl":
-		manager.logger = log.New(os.Stdout, "SSLTest: ", log.Ldate|log.Ltime)
+		manager.logger = log.New(io.MultiWriter(os.Stdout, logFile), "SSLTest: ", log.Ldate|log.Ltime)
 		manager.sslRun()
 		break
 	case id == "labs":
-		manager.logger = log.New(os.Stdout, "SSLLabs: ", log.Ldate|log.Ltime)
+		manager.logger = log.New(io.MultiWriter(os.Stdout, logFile), "SSLLabs: ", log.Ldate|log.Ltime)
 		manager.labsRun()
 		break
 	case id == "obs":
-		manager.logger = log.New(os.Stdout, "Obs.:    ", log.Ldate|log.Ltime)
+		manager.logger = log.New(io.MultiWriter(os.Stdout, logFile), "Obs.:    ", log.Ldate|log.Ltime)
 		manager.obsRun()
 		break
 	case id == "secH":
-		manager.logger = log.New(os.Stdout, "SecH:    ", log.Ldate|log.Ltime)
+		manager.logger = log.New(io.MultiWriter(os.Stdout, logFile), "SecH:    ", log.Ldate|log.Ltime)
 		manager.secHRun()
 		break
 	case id == "sql":
-		manager.logger = log.New(os.Stdout, "SQLwrt:  ", log.Ldate|log.Ltime)
+		manager.logger = log.New(io.MultiWriter(os.Stdout, logFile), "SQLwrt:  ", log.Ldate|log.Ltime)
 		manager.sqlRun()
 		break
 	default:
@@ -450,7 +455,7 @@ func NewErrorHandler(InputEventChannel chan Event, QuestionChannel chan bool, ch
 }
 
 func (errorHandler *ErrorHandler) run() {
-	logger := log.New(os.Stdout, "ErrHand: ", log.Ltime|log.Ldate)
+	logger := log.New(io.MultiWriter(os.Stdout, logFile), "ErrHand: ", log.Ltime|log.Ldate)
 	if logLevel >= LOG_NOTICE {
 		logger.Println("[NOTICE] ErrorHandler started")
 	}
@@ -491,7 +496,8 @@ func (errorHandler *ErrorHandler) run() {
 					case "labs":
 						//add empty report if failed in SSLLabs
 						report := LabsReport{
-							Host: tryEvent.host,
+							Host:      tryEvent.host,
+							Reachable: "unknown",
 							Endpoints: []LabsEndpoint{
 								LabsEndpoint{
 									Grade: "70",
@@ -563,7 +569,7 @@ func NewMasterManager(hostProvider *HostProvider, useing map[string]bool) *Maste
 		useing:              useing,
 		results:             &LabsResults{reports: make([]LabsReport, 0)},
 		managerList:         make([]Manager, len(chain)),
-		logger:              log.New(os.Stdout, "Control: ", log.Ldate|log.Ltime),
+		logger:              log.New(io.MultiWriter(os.Stdout, logFile), "Control: ", log.Ldate|log.Ltime),
 	}
 
 	go manager.run()
@@ -678,7 +684,8 @@ func (manager *MasterManager) run() {
 	if hasNext {
 		e = Event{host, "master", 0, nil, 0, false}
 		report := LabsReport{
-			Host: e.host,
+			Host:      e.host,
+			Reachable: "unknown",
 			Endpoints: []LabsEndpoint{
 				LabsEndpoint{
 					Grade: "70",
@@ -715,7 +722,8 @@ func (manager *MasterManager) run() {
 				if hasNext {
 					e = Event{host, "master", 0, nil, 0, false}
 					report := LabsReport{
-						Host: e.host,
+						Host:      e.host,
+						Reachable: "unknown",
 						Endpoints: []LabsEndpoint{
 							LabsEndpoint{
 								Grade: "70",
@@ -1098,6 +1106,31 @@ func main() {
 	}
 	var useing = map[string]bool{"labs": !*conf_ssllabs, "obs": !*conf_observatory, "secH": !*conf_securityheaders, "sql": !*conf_sql, "ssl": !*conf_ssltest}
 
+	err := os.Mkdir("log", 0700)
+	if err != nil && os.IsNotExist(err) {
+		log.Fatalf("[FATAL] Could not create loggingFolder log: %v", err.Error())
+	}
+
+	err = os.Mkdir("results", 0700)
+	if err != nil && os.IsNotExist(err) {
+		log.Fatalf("[FATAL] Could not create resultFolder res: %v", err.Error())
+	}
+
+	FileName := time.Now().Format("2006_01_02_150405")
+	logFile, err = os.Create("log/" + FileName + ".log")
+
+	if err != nil {
+		log.Fatalf("[FATAL] Could not create logging File %v: %v", "log/"+FileName+".log", err.Error())
+	}
+	defer logFile.Close()
+
+	resFile, err := os.Create("results/" + FileName + ".result")
+
+	if err != nil {
+		log.Fatalf("[FATAL] Could not create resultFile %v: %v", "results/"+FileName+".result", err.Error())
+	}
+	defer resFile.Close()
+
 	hp := NewHostProvider(hostnames)
 	manager := NewMasterManager(hp, useing)
 
@@ -1144,7 +1177,7 @@ func main() {
 						}
 					}
 					if grade != "" && name != "" {
-						fmt.Println(name + ": " + grade)
+						fmt.Fprintln(resFile, name+": "+grade)
 					}
 				}
 			} else if *conf_json_flat {
@@ -1156,28 +1189,28 @@ func main() {
 					flattened := flattenAndFormatJSON(results)
 
 					// Print the flattened data
-					fmt.Println(*flattened)
+					fmt.Fprintln(resFile, *flattened)
 				}
 			} else {
 				// Raw (non-Go-mangled) JSON output
 
-				fmt.Println("[")
+				fmt.Fprintln(resFile, "[")
 				for i := range manager.results.responses {
 					results := manager.results.responses[i]
 
 					if i > 0 {
-						fmt.Println(",")
+						fmt.Fprintln(resFile, ",")
 					}
-					fmt.Println(results)
+					fmt.Fprintln(resFile, results)
 				}
-				fmt.Println("]")
+				fmt.Fprintln(resFile, "]")
 			}
 
 			if err != nil {
-				log.Fatalf("[ERROR] Output to JSON failed: %v", err)
+				log.Fatalf("[ERROR] Result-Output to JSON failed: %v", err)
 			}
 
-			fmt.Println(string(results))
+			fmt.Fprintln(resFile, string(results))
 
 			if logLevel >= LOG_INFO {
 				log.Println("[INFO] All assessments complete; shutting down")

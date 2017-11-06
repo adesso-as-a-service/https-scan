@@ -231,7 +231,7 @@ func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 		//If securityheaders is unreachable for https try again
 		if strings.Contains(err.Error(), "Retry") {
 			if logLevel >= LOG_NOTICE {
-				logger.Printf("[NOTICE] Retrying securityheades-Scan without https for %v", e.host)
+				logger.Printf("[NOTICE] Retrying securityheaders-scan without https for %v", e.host)
 
 			}
 			err := e.report.invokeSecurityHeaders(e.host, false, logger)

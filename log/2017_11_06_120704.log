@@ -1,0 +1,9 @@
+Control: 2017/11/06 12:07:04 [NOTICE] Control-Manager started
+Control: 2017/11/06 12:07:04 [NOTICE] Starting Control-Loop
+SSLTest: 2017/11/06 12:07:04 [NOTICE] SSLTest-Manager started
+SSLLabs: 2017/11/06 12:07:04 [NOTICE] SSLLabs-Manager started
+ErrHand: 2017/11/06 12:07:04 [NOTICE] ErrorHandler started
+Control: 2017/11/06 12:07:04 [NOTICE] Assessment for all hosts has started
+SSLLabs: 2017/11/06 12:07:05 [NOTICE] Server set current assessments to 0
+SSLLabs: 2017/11/06 12:07:05 [NOTICE] Server set maximum assessments to 25
+SSLLabs: 2017/11/06 12:07:07 [NOTICE] Server set current assessments to 1

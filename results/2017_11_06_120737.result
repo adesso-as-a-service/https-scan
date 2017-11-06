@@ -1,0 +1,1041 @@
+[
+{
+  "host": "ar.onemodel.jpmorgan.sh02.de",
+  "port": 443,
+  "protocol": "HTTP",
+  "isPublic": false,
+  "status": "READY",
+  "startTime": 1509966424428,
+  "testTime": 1509966517251,
+  "engineVersion": "1.29.7",
+  "criteriaVersion": "2009o",
+  "endpoints": [
+    {
+      "ipAddress": "82.98.90.170",
+      "statusMessage": "Ready",
+      "grade": "T",
+      "gradeTrustIgnored": "C",
+      "hasWarnings": false,
+      "isExceptional": false,
+      "progress": 100,
+      "duration": 92780,
+      "eta": 0,
+      "delegation": 1,
+      "details": {
+        "hostStartTime": 1509966424428,
+        "key": {
+          "size": 2048,
+          "alg": "RSA",
+          "debianFlaw": false,
+          "strength": 2048
+        },
+        "cert": {
+          "subject": "CN=www.jpmorganassetmanagement.com, OU=IM Client Technology, O=JPMorgan Chase, L=New York, ST=New York, C=us",
+          "commonNames": [
+            "www.jpmorganassetmanagement.com"
+          ],
+          "altNames": [
+            "www.jpmorganassetmanagement.com"
+          ],
+          "notBefore": 1425945600000,
+          "notAfter": 1458086399000,
+          "issuerSubject": "CN=Symantec Class 3 Secure Server CA - G4, OU=Symantec Trust Network, O=Symantec Corporation, C=US",
+          "issuerLabel": "Symantec Class 3 Secure Server CA - G4",
+          "sigAlg": "SHA256withRSA",
+          "revocationInfo": 3,
+          "crlURIs": [
+            "http://ss.symcb.com/ss.crl"
+          ],
+          "ocspURIs": [
+            "http://ss.symcd.com"
+          ],
+          "revocationStatus": 0,
+          "crlRevocationStatus": 0,
+          "ocspRevocationStatus": 0,
+          "sgc": 0,
+          "issues": 13,
+          "sct": false,
+          "mustStaple": 0,
+          "sha1Hash": "fef75d1e8723e7a27474002c5c1dec814fd6dbe4",
+          "pinSha256": "rWzv6Qt9g/VkEItybKyLjUbtk0XjTh+e9jRTuVZH9yg="
+        },
+        "chain": {
+          "certs": [
+            {
+              "subject": "CN=www.jpmorganassetmanagement.com, OU=IM Client Technology, O=JPMorgan Chase, L=New York, ST=New York, C=us",
+              "label": "www.jpmorganassetmanagement.com",
+              "notBefore": 1425945600000,
+              "notAfter": 1458086399000,
+              "issuerSubject": "CN=Symantec Class 3 Secure Server CA - G4, OU=Symantec Trust Network, O=Symantec Corporation, C=US",
+              "issuerLabel": "Symantec Class 3 Secure Server CA - G4",
+              "sigAlg": "SHA256withRSA",
+              "issues": 2,
+              "keyAlg": "RSA",
+              "keySize": 2048,
+              "keyStrength": 2048,
+              "revocationStatus": 0,
+              "crlRevocationStatus": 0,
+              "ocspRevocationStatus": 0,
+              "sha1Hash": "fef75d1e8723e7a27474002c5c1dec814fd6dbe4",
+              "pinSha256": "rWzv6Qt9g/VkEItybKyLjUbtk0XjTh+e9jRTuVZH9yg=",
+              "raw": "-----BEGIN CERTIFICATE-----\nMIIFGDCCBACgAwIBAgIQECBUXmW4PCK+4Jz1QjhLizANBgkqhkiG9w0BAQsFADB+MQswCQYDVQQG\r\nEwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29ycG9yYXRpb24xHzAdBgNVBAsTFlN5bWFudGVjIFRy\r\ndXN0IE5ldHdvcmsxLzAtBgNVBAMTJlN5bWFudGVjIENsYXNzIDMgU2VjdXJlIFNlcnZlciBDQSAt\r\nIEc0MB4XDTE1MDMxMDAwMDAwMFoXDTE2MDMxNTIzNTk1OVowgZUxCzAJBgNVBAYTAnVzMREwDwYD\r\nVQQIDAhOZXcgWW9yazERMA8GA1UEBwwITmV3IFlvcmsxFzAVBgNVBAoMDkpQTW9yZ2FuIENoYXNl\r\nMR0wGwYDVQQLDBRJTSBDbGllbnQgVGVjaG5vbG9neTEoMCYGA1UEAwwfd3d3LmpwbW9yZ2FuYXNz\r\nZXRtYW5hZ2VtZW50LmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKiLXpzyz5SW\r\nYjcaPx1boTb2g4Eu3vFnsaYHnb2XoUE0o8GGVY7F07zggOUcbPPdENbyTWvXQ5MoI8iqsujJElBz\r\nwmGXmTnGboS31jcZgjUL1P+f5vEOuPtZoeEEFjn69P0yhhrlaTbiqFbO02FSs4G2kC8lk8jEFPFz\r\n1zRAvMJ7F0W2lJbUu0C1NwdeIi7g1N4Z1DDtCbIRKWwHbQv5TSLiTm5PDVlEb4k0jzoTWjn3ycBW\r\nJLi1z4yJtqMi/t105gCU3SAC7801fpVPiNYFHrLAAMUyiGxtttSQ1tD1oqfpK7M1Awa0S/VHGDvv\r\nkMLpcsTjneyhVYcZYKob+zqmANUCAwEAAaOCAXgwggF0MCoGA1UdEQQjMCGCH3d3dy5qcG1vcmdh\r\nbmFzc2V0bWFuYWdlbWVudC5jb20wCQYDVR0TBAIwADAOBgNVHQ8BAf8EBAMCBaAwHQYDVR0lBBYw\r\nFAYIKwYBBQUHAwEGCCsGAQUFBwMCMGUGA1UdIAReMFwwWgYKYIZIAYb4RQEHNjBMMCMGCCsGAQUF\r\nBwIBFhdodHRwczovL2Quc3ltY2IuY29tL2NwczAlBggrBgEFBQcCAjAZGhdodHRwczovL2Quc3lt\r\nY2IuY29tL3JwYTAfBgNVHSMEGDAWgBRfYM9hkFXfhEMUimAqsvV69EMY7zArBgNVHR8EJDAiMCCg\r\nHqAchhpodHRwOi8vc3Muc3ltY2IuY29tL3NzLmNybDBXBggrBgEFBQcBAQRLMEkwHwYIKwYBBQUH\r\nMAGGE2h0dHA6Ly9zcy5zeW1jZC5jb20wJgYIKwYBBQUHMAKGGmh0dHA6Ly9zcy5zeW1jYi5jb20v\r\nc3MuY3J0MA0GCSqGSIb3DQEBCwUAA4IBAQAvcUF8aK+nazvTkEgIbDs1QqsBdSCpWFxEdAEIM2kQ\r\nAd0bSUHAHXFsk2gGBrzMVoyr3mThaUWnoAC7zPp7JirZcUyBq2yHr+QE7O3TNHKA2IkLiMjBPuK1\r\nifui6ixoSlDnH+uVSUDA8txMxOk2xi1wMGjYi41X+brI+/E9nFOZyvCMAuzci+kX1no+9N5zFu3U\r\nOYXQUhfiMFz7XRG2AC/dz+PYg+fJV/gtdpOhwxj7rJTl2J3bxZr8o3FMqSS1eDQrNdRvRWot8W6i\r\nu1CFDufQO83F6JHPY3x7SyGbm9Rewjeqvnn6jwmL+A5CpKiRzkk6hXlrnc0mMBY16IJEkEm8\r\n-----END CERTIFICATE-----\n"
+            },
+            {
+              "subject": "CN=Symantec Class 3 Secure Server CA - G4, OU=Symantec Trust Network, O=Symantec Corporation, C=US",
+              "label": "Symantec Class 3 Secure Server CA - G4",
+              "notBefore": 1383177600000,
+              "notAfter": 1698710399000,
+              "issuerSubject": "CN=VeriSign Class 3 Public Primary Certification Authority - G5, OU=\"(c) 2006 VeriSign, Inc. - For authorized use only\", OU=VeriSign Trust Network, O=\"VeriSign, Inc.\", C=US",
+              "issuerLabel": "VeriSign Class 3 Public Primary Certification Authority - G5",
+              "sigAlg": "SHA256withRSA",
+              "issues": 0,
+              "keyAlg": "RSA",
+              "keySize": 2048,
+              "keyStrength": 2048,
+              "revocationStatus": 0,
+              "crlRevocationStatus": 0,
+              "ocspRevocationStatus": 0,
+              "sha1Hash": "ff67367c5cd4de4ae18bcce1d70fdabd7c866135",
+              "pinSha256": "9n0izTnSRF+W4W4JTq51avSXkWhQB8duS2bxVLfzXsY=",
+              "raw": "-----BEGIN CERTIFICATE-----\nMIIFODCCBCCgAwIBAgIQUT+5dDhwtzRAQY0wkwaZ/zANBgkqhkiG9w0BAQsFADCByjELMAkGA1UE\r\nBhMCVVMxFzAVBgNVBAoTDlZlcmlTaWduLCBJbmMuMR8wHQYDVQQLExZWZXJpU2lnbiBUcnVzdCBO\r\nZXR3b3JrMTowOAYDVQQLEzEoYykgMjAwNiBWZXJpU2lnbiwgSW5jLiAtIEZvciBhdXRob3JpemVk\r\nIHVzZSBvbmx5MUUwQwYDVQQDEzxWZXJpU2lnbiBDbGFzcyAzIFB1YmxpYyBQcmltYXJ5IENlcnRp\r\nZmljYXRpb24gQXV0aG9yaXR5IC0gRzUwHhcNMTMxMDMxMDAwMDAwWhcNMjMxMDMwMjM1OTU5WjB+\r\nMQswCQYDVQQGEwJVUzEdMBsGA1UEChMUU3ltYW50ZWMgQ29ycG9yYXRpb24xHzAdBgNVBAsTFlN5\r\nbWFudGVjIFRydXN0IE5ldHdvcmsxLzAtBgNVBAMTJlN5bWFudGVjIENsYXNzIDMgU2VjdXJlIFNl\r\ncnZlciBDQSAtIEc0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstgFyhx0LbUXVjnF\r\nSlIJluhL2AzxaJ+aQihiw6UwU35VEYJbA3oNL+F5BMm0lncZgQGUWfm893qZJ4Itt4PdWid/sgN6\r\nnFMl6UgfRk/InSn4vnlW9vf92Tpo2otLgjNBEsPIPMzWlnqEIRoiBAMnF4scaGGTDw5RgDMdtLXO\r\n637QYqzus3sBdO9pNevK1T2p7peYyo2qRA4lmUoVlqTObQJUHypqJuIGOmNIrLRM0XWTUP8TL9ba\r\n4cYY9Z/JJV3zADreJk20KQnNDz0jbxZKgRb78oMQw7jW2FUyPfG9D72MUpVKFpd6UiFjdS8W+cRm\r\nvvW1Cdj/JwDNRHxvSz+w9wIDAQABo4IBYzCCAV8wEgYDVR0TAQH/BAgwBgEB/wIBADAwBgNVHR8E\r\nKTAnMCWgI6Ahhh9odHRwOi8vczEuc3ltY2IuY29tL3BjYTMtZzUuY3JsMA4GA1UdDwEB/wQEAwIB\r\nBjAvBggrBgEFBQcBAQQjMCEwHwYIKwYBBQUHMAGGE2h0dHA6Ly9zMi5zeW1jYi5jb20wawYDVR0g\r\nBGQwYjBgBgpghkgBhvhFAQc2MFIwJgYIKwYBBQUHAgEWGmh0dHA6Ly93d3cuc3ltYXV0aC5jb20v\r\nY3BzMCgGCCsGAQUFBwICMBwaGmh0dHA6Ly93d3cuc3ltYXV0aC5jb20vcnBhMCkGA1UdEQQiMCCk\r\nHjAcMRowGAYDVQQDExFTeW1hbnRlY1BLSS0xLTUzNDAdBgNVHQ4EFgQUX2DPYZBV34RDFIpgKrL1\r\nevRDGO8wHwYDVR0jBBgwFoAUf9Nlp8Ld7LvwMAnzQzn6Aq8zMTMwDQYJKoZIhvcNAQELBQADggEB\r\nAF6UVkndji1l9cE2UbYD49qecxnyH1mrWH5sJgUs+oHXXCMXIiw3k/eG7IXmsKP9H+IyqEVv4dn7\r\nua/ScKAyQmW/hP4WKo8/xabWo5N9Q+l0IZE1KPRj6S7t9/Vcf0uatSDpCr3gRRAMFJSaXaXjS5Ho\r\nJJtGQGX0InLNmfiIEfXzf+YzguaoxX7+0AjiJVgIcWjmzaLmFN5OUiQt/eV5E1PnXi8tTRttQBVS\r\nK/eHiXgSgW7ZTaoteNTCLD0IX4eRnh8OsN4wUmSGiaqdZpwOdgyA8nTYKvi4Os7X1g8RvmurFPW9\r\nQaAiY4nxug9vKWNmLT+sjHLF+8fk1A/yO0+MKcc=\r\n-----END CERTIFICATE-----\n"
+            }
+          ],
+          "issues": 0
+        },
+        "protocols": [
+          {
+            "id": 769,
+            "name": "TLS",
+            "version": "1.0"
+          },
+          {
+            "id": 770,
+            "name": "TLS",
+            "version": "1.1"
+          },
+          {
+            "id": 771,
+            "name": "TLS",
+            "version": "1.2"
+          }
+        ],
+        "suites": {
+          "list": [
+            {
+              "id": 49200,
+              "name": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+              "cipherStrength": 256,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 49192,
+              "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+              "cipherStrength": 256,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 49172,
+              "name": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+              "cipherStrength": 256,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 159,
+              "name": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+              "cipherStrength": 256,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 107,
+              "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256",
+              "cipherStrength": 256,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 57,
+              "name": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+              "cipherStrength": 256,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 157,
+              "name": "TLS_RSA_WITH_AES_256_GCM_SHA384",
+              "cipherStrength": 256
+            },
+            {
+              "id": 61,
+              "name": "TLS_RSA_WITH_AES_256_CBC_SHA256",
+              "cipherStrength": 256
+            },
+            {
+              "id": 53,
+              "name": "TLS_RSA_WITH_AES_256_CBC_SHA",
+              "cipherStrength": 256
+            },
+            {
+              "id": 49170,
+              "name": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+              "cipherStrength": 112,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 22,
+              "name": "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+              "cipherStrength": 112,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 10,
+              "name": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+              "cipherStrength": 112
+            },
+            {
+              "id": 49199,
+              "name": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+              "cipherStrength": 128,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 49191,
+              "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+              "cipherStrength": 128,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 49171,
+              "name": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+              "cipherStrength": 128,
+              "ecdhBits": 256,
+              "ecdhStrength": 3072
+            },
+            {
+              "id": 158,
+              "name": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+              "cipherStrength": 128,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 103,
+              "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+              "cipherStrength": 128,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 51,
+              "name": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+              "cipherStrength": 128,
+              "dhStrength": 1024,
+              "dhP": 128,
+              "dhG": 1,
+              "dhYs": 128
+            },
+            {
+              "id": 156,
+              "name": "TLS_RSA_WITH_AES_128_GCM_SHA256",
+              "cipherStrength": 128
+            },
+            {
+              "id": 60,
+              "name": "TLS_RSA_WITH_AES_128_CBC_SHA256",
+              "cipherStrength": 128
+            },
+            {
+              "id": 47,
+              "name": "TLS_RSA_WITH_AES_128_CBC_SHA",
+              "cipherStrength": 128
+            }
+          ],
+          "preference": true
+        },
+        "prefixDelegation": false,
+        "nonPrefixDelegation": true,
+        "vulnBeast": true,
+        "renegSupport": 2,
+        "stsStatus": "unknown",
+        "stsResponseHeader": "",
+        "stsSubdomains": false,
+        "stsPreload": false,
+        "sessionResumption": 2,
+        "compressionMethods": 0,
+        "supportsNpn": false,
+        "supportsAlpn": false,
+        "sessionTickets": 0,
+        "ocspStapling": false,
+        "sniRequired": false,
+        "supportsRc4": false,
+        "rc4WithModern": false,
+        "rc4Only": false,
+        "forwardSecrecy": 4,
+        "protocolIntolerance": 0,
+        "miscIntolerance": 0,
+        "sims": {
+          "results": [
+            {
+              "client": {
+                "id": 56,
+                "name": "Android",
+                "version": "2.3.7",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 22,
+              "kxInfo": "DH 1024"
+            },
+            {
+              "client": {
+                "id": 58,
+                "name": "Android",
+                "version": "4.0.4",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 59,
+                "name": "Android",
+                "version": "4.1.1",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 60,
+                "name": "Android",
+                "version": "4.2.2",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 61,
+                "name": "Android",
+                "version": "4.3",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 62,
+                "name": "Android",
+                "version": "4.4.2",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 88,
+                "name": "Android",
+                "version": "5.0.0",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 129,
+                "name": "Android",
+                "version": "6.0",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 139,
+                "name": "Android",
+                "version": "7.0",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 94,
+                "name": "Baidu",
+                "version": "Jan 2015",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 91,
+                "name": "BingPreview",
+                "version": "Jan 2015",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 136,
+                "name": "Chrome",
+                "platform": "XP SP3",
+                "version": "49",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 141,
+                "name": "Chrome",
+                "platform": "Win 7",
+                "version": "57",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 84,
+                "name": "Firefox",
+                "platform": "Win 7",
+                "version": "31.3.0 ESR",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 132,
+                "name": "Firefox",
+                "platform": "Win 7",
+                "version": "47",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 137,
+                "name": "Firefox",
+                "platform": "XP SP3",
+                "version": "49",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 142,
+                "name": "Firefox",
+                "platform": "Win 7",
+                "version": "53",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 97,
+                "name": "Googlebot",
+                "version": "Feb 2015",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 100,
+                "name": "IE",
+                "platform": "XP",
+                "version": "6",
+                "isReference": false
+              },
+              "errorCode": 1,
+              "attempts": 0
+            },
+            {
+              "client": {
+                "id": 19,
+                "name": "IE",
+                "platform": "Vista",
+                "version": "7",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 101,
+                "name": "IE",
+                "platform": "XP",
+                "version": "8",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 10
+            },
+            {
+              "client": {
+                "id": 113,
+                "name": "IE",
+                "platform": "Win 7",
+                "version": "8-10",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 143,
+                "name": "IE",
+                "platform": "Win 7",
+                "version": "11",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 134,
+                "name": "IE",
+                "platform": "Win 8.1",
+                "version": "11",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 64,
+                "name": "IE",
+                "platform": "Win Phone 8.0",
+                "version": "10",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 65,
+                "name": "IE",
+                "platform": "Win Phone 8.1",
+                "version": "11",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 106,
+                "name": "IE",
+                "platform": "Win Phone 8.1 Update",
+                "version": "11",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 131,
+                "name": "IE",
+                "platform": "Win 10",
+                "version": "11",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 130,
+                "name": "Edge",
+                "platform": "Win 10",
+                "version": "13",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 120,
+                "name": "Edge",
+                "platform": "Win Phone 10",
+                "version": "13",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 25,
+                "name": "Java",
+                "version": "6u45",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 22,
+              "kxInfo": "DH 1024"
+            },
+            {
+              "client": {
+                "id": 26,
+                "name": "Java",
+                "version": "7u25",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49170,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 86,
+                "name": "Java",
+                "version": "8u31",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49170,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 27,
+                "name": "OpenSSL",
+                "version": "0.9.8y",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 57,
+              "kxInfo": "DH 1024"
+            },
+            {
+              "client": {
+                "id": 99,
+                "name": "OpenSSL",
+                "version": "1.0.1l",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 121,
+                "name": "OpenSSL",
+                "version": "1.0.2e",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 32,
+                "name": "Safari",
+                "platform": "OS X 10.6.8",
+                "version": "5.1.9",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 33,
+                "name": "Safari",
+                "platform": "iOS 6.0.1",
+                "version": "6",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 34,
+                "name": "Safari",
+                "platform": "OS X 10.8.4",
+                "version": "6.0.4",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 769,
+              "suiteId": 49172,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 63,
+                "name": "Safari",
+                "platform": "iOS 7.1",
+                "version": "7",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 35,
+                "name": "Safari",
+                "platform": "OS X 10.9",
+                "version": "7",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 85,
+                "name": "Safari",
+                "platform": "iOS 8.4",
+                "version": "8",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 87,
+                "name": "Safari",
+                "platform": "OS X 10.10",
+                "version": "8",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49192,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 114,
+                "name": "Safari",
+                "platform": "iOS 9",
+                "version": "9",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 111,
+                "name": "Safari",
+                "platform": "OS X 10.11",
+                "version": "9",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 140,
+                "name": "Safari",
+                "platform": "iOS 10",
+                "version": "10",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 138,
+                "name": "Safari",
+                "platform": "OS X 10.12",
+                "version": "10",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 112,
+                "name": "Apple ATS",
+                "platform": "iOS 9",
+                "version": "9",
+                "isReference": true
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 92,
+                "name": "Yahoo Slurp",
+                "version": "Jan 2015",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            },
+            {
+              "client": {
+                "id": 93,
+                "name": "YandexBot",
+                "version": "Jan 2015",
+                "isReference": false
+              },
+              "errorCode": 0,
+              "attempts": 1,
+              "protocolId": 771,
+              "suiteId": 49200,
+              "kxInfo": "ECDH secp256r1"
+            }
+          ]
+        },
+        "heartbleed": false,
+        "heartbeat": false,
+        "openSslCcs": 1,
+        "openSSLLuckyMinus20": 1,
+        "poodle": false,
+        "poodleTls": 1,
+        "fallbackScsv": true,
+        "freak": false,
+        "hasSct": 0,
+        "dhPrimes": [
+          "a72fc0e8dff90853f4c7ce205ae005d9e39d72156d1707f5e2f36a7ab86772b24494933ab3d0bdece2cd038b50e1b417f3ce889a5743ddf7809e16566cf2189f556645f0d46b3e51ed3363b89fdd4f36308f0345531573e8d3a6c01d742d3a57807b3c7cc8bd21be6168a81df43a53d259804ef8c2c60074397eca8c3b31be83"
+        ],
+        "dhUsesKnownPrimes": 0,
+        "dhYsReuse": false,
+        "logjam": false,
+        "hstsPolicy": {
+          "LONG_MAX_AGE": 15552000,
+          "status": "unknown",
+          "directives": {}
+        },
+        "hstsPreloads": [
+          {
+            "source": "Chrome",
+            "hostname": "ar.onemodel.jpmorgan.sh02.de",
+            "status": "absent",
+            "sourceTime": 1509963660617
+          },
+          {
+            "source": "Edge",
+            "hostname": "ar.onemodel.jpmorgan.sh02.de",
+            "status": "absent",
+            "sourceTime": 1509963001017
+          },
+          {
+            "source": "Firefox",
+            "hostname": "ar.onemodel.jpmorgan.sh02.de",
+            "status": "absent",
+            "sourceTime": 1509963001017
+          },
+          {
+            "source": "IE",
+            "hostname": "ar.onemodel.jpmorgan.sh02.de",
+            "status": "absent",
+            "sourceTime": 1509963001017
+          }
+        ],
+        "hpkpPolicy": {
+          "status": "unknown",
+          "pins": [],
+          "matchedPins": [],
+          "directives": []
+        },
+        "hpkpRoPolicy": {
+          "status": "unknown",
+          "pins": [],
+          "matchedPins": [],
+          "directives": []
+        },
+        "drownHosts": [],
+        "drownErrors": false,
+        "drownVulnerable": false
+      }
+    }
+  ]
+}
+]
+
