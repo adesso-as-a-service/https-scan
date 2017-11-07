@@ -11,15 +11,13 @@ import (
 	"time"
 )
 
-var globalObservatory bool
-
-//How often do we try
+// obsTries is the maximum number of scan retries
 var obsTries = 2
 
-// How many assessment do we have in progress?
+// activeObsAssessments is the number of active assessments according to the manager
 var activeObsAssessments = 0
 
-// The maximum number of assessments we can have in progress at any one time.
+// maxObsAssessments is the maximal number of active assessments
 var maxObsAssessments = 10
 
 // ObservatoryAnalyzeResult is the object to contain the response we get
@@ -318,6 +316,7 @@ func (analyzeResponse *LabsReport) invokeObservatoryResults(analyzeResults Obser
 	return nil
 }
 
+// NewObsAssessment starts the assessment of an event
 func NewObsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "obs"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
@@ -347,11 +346,13 @@ func NewObsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	eventChannel <- e
 }
 
+// startObsAssessment calls NewObsAssessments as a new goroutine
 func (manager *Manager) startObsAssessment(e Event) {
 	go NewObsAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeObsAssessments++
 }
 
+// obsRun starts the manager responsible for the observatory-scan
 func (manager *Manager) obsRun() {
 	for {
 		select {
@@ -402,13 +403,11 @@ func (manager *Manager) obsRun() {
 
 			}
 			break
+		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
 			manager.CloseChannel <- (activeObsAssessments == 0)
-
-		// Once a second, start a new assessment, provided there are
-		// hostnames left and we're not over the concurrent assessment limit.
 		default:
-			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
+			<-time.NewTimer(time.Duration(500) * time.Millisecond).C
 
 			if activeObsAssessments < maxObsAssessments {
 				select {

@@ -1,20 +1,11 @@
 // +build go1.3
 
 /*
- * Licensed to Qualys, Inc. (QUALYS) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * QUALYS licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Includes modified parts from Qualys, Inc. (QUALYS)s ssllabs-scan.
+ * ssllabs-scan is released under the the Apache License, Version 2.0
+ * (sourcecode @ https://github.com/ssllabs/ssllabs-scan)
+ * In accordance with this license, a copy of the license is included
+ * in the package.
  */
 
 package main
@@ -35,6 +26,7 @@ import (
 	"time"
 )
 
+// Diffrent Log-Levels
 const (
 	LOG_NONE     = -1
 	LOG_EMERG    = 0
@@ -48,24 +40,33 @@ const (
 	LOG_TRACE    = 8
 )
 
-var logLevel = LOG_NOTICE
+// logLevel sets the global verbosity of thr Logging
+var logLevel int
 
-var globalNewAssessmentCoolOff int64 = 1100
-
+// globalIgnoreMismatch, when true hostname mismatches are ignored
 var globalIgnoreMismatch = false
 
+// globalStartNew, when true no cached results are used
 var globalStartNew = true
 
+// globalFromCache, is equal to !globalStartNew
 var globalFromCache = false
 
+// globalMaxAge sets the highest accepted age in hours for cached results
 var globalMaxAge = 0
 
+// globalInsecure, when true certificates aren't validated (DON'T USE)
 var globalInsecure = false
 
+// logFile references the log-File, which is used to store the log of the current run
 var logFile *os.File
 
-//Contains shortNames for all managers, also sets the manager order
+// chain contains all ids of the implemented managers. The order in this string is the order
+// in which the hosts pass the managers
 var chain = []string{"ssl", "labs", "obs", "secH", "sql"}
+
+// The following structs are modified structs from ssllabs-scan and
+// hold  information and results for the scan
 
 type LabsError struct {
 	Field   string
@@ -311,23 +312,30 @@ type LabsEndpoint struct {
 }
 
 type LabsReport struct {
-	Host               string
-	Port               int
-	Reachable          string
-	Protocol           string
-	IsPublic           bool
-	Status             string
-	StatusMessage      string
-	StartTime          int64
-	TestTime           int64
-	EngineVersion      string
-	CriteriaVersion    string
-	CacheExpiryTime    int64
-	Endpoints          []LabsEndpoint
-	CertHostnames      []string
-	rawJSON            string
-	HeaderScore        Securityheaders
-	ObservatoryScan    ObservatoryAnalyzeResult
+	Host string
+	Port int
+	// Reachabel can be "no" if host is not reachable
+	// "unknown" if connection isn't tested
+	// "http" if only http connection is possible
+	// "https" if https connection is possible
+	Reachable       string
+	Protocol        string
+	IsPublic        bool
+	Status          string
+	StatusMessage   string
+	StartTime       int64
+	TestTime        int64
+	EngineVersion   string
+	CriteriaVersion string
+	CacheExpiryTime int64
+	Endpoints       []LabsEndpoint
+	CertHostnames   []string
+	rawJSON         string
+	// HeaderScore holds the results from securityheaders.io
+	HeaderScore Securityheaders
+	// ObservatoryScan holds the analyzed results from observatory
+	ObservatoryScan ObservatoryAnalyzeResult
+	// ObservatoryResults holds the raw results
 	ObservatoryResults ObservatoryScanResults
 }
 
@@ -345,54 +353,94 @@ type LabsInfo struct {
 	Messages             []string
 }
 
+// Event holds the information for one specific host that is analyzed
 type Event struct {
-	host      string
+	host string
+	// senderID is a short string which is associated with a specific
+	// manager
 	senderID  string
 	eventType int
-	report    *LabsReport
-	tries     int
-	https     bool
+	// report holds the scan results
+	report *LabsReport
+	// tries holds the number of times the event has failed in the current
+	// manager. This is used for managing retries
+	tries int
+	// https holds information if a tls connection can be achieved with
+	// the host. Assumed true
+	https bool
 }
 
 const (
-	FATAL    = -3 // direct to sql, if used
-	REERROR  = -2 // Retrying Error
-	ERROR    = -1 // Try Next Manager Error
+	// FATAL signals that this event is finished and needs to be send directly
+	// to SQL if used otherwise they are finished by Control
+	FATAL = -3
+	// REERROR are errors which need to be retried by the sending manager
+	REERROR = -2
+	// ERROR are errors that need to be continued by the next manager in line
+	ERROR = -1
+	// FINISHED signals that the manager finished this event correctly
 	FINISHED = 0
 )
 
-type HostProvider struct {
+// eventTypes for the internal channel of the managers
+const (
+	INTERNAL_ASSESSMENT_FATAL    = -2
+	INTERNAL_ASSESSMENT_FAILED   = -1
+	INTERNAL_ASSESSMENT_STARTING = 0
+	INTERNAL_ASSESSMENT_COMPLETE = 1
+)
+
+// HostProvider is a slice of hostnames
+type hostProvider struct {
 	hostnames   []string
 	StartingLen int
 }
 
-func NewHostProvider(hs []string) *HostProvider {
+// newHostProvider creates a hostProvider struct from a slice of hostnames
+func newHostProvider(hs []string) *hostProvider {
 	hostnames := make([]string, len(hs))
 	copy(hostnames, hs)
-	hostProvider := HostProvider{hostnames, len(hs)}
+	hostProvider := hostProvider{hostnames, len(hs)}
+
 	return &hostProvider
 }
 
-func (hp *HostProvider) next() (string, bool) {
+// next returns the next hostname of hostProvider and true
+// if there is none he returns just false
+func (hp *hostProvider) next() (string, bool) {
 	if len(hp.hostnames) == 0 {
+
 		return "", false
 	}
-
 	var e string
 	e, hp.hostnames = hp.hostnames[0], hp.hostnames[1:]
 
 	return e, true
 }
 
+// Manager defines a unit which is responsible for managing one step in the
+// analysis chain. This step is performed concurrently.
 type Manager struct {
-	InputEventChannel    chan Event
-	OutputEventChannel   chan Event
+	// InputEventChannel is a channel for incoming events,
+	// that are to be analyzed
+	InputEventChannel chan Event
+	// OutputEventChannel is a channel for outgoing finished events
+	OutputEventChannel chan Event
+	// InternalEventChannel is a channel which is used for communication
+	// with concurrently running analyses
 	InternalEventChannel chan Event
-	ControlEventChannel  chan Event
-	CloseChannel         chan bool
-	logger               *log.Logger
+	// ControlEventChannel is a channel to communicate errors to the Control-Manager
+	ControlEventChannel chan Event
+	// CloseChannel is a channel which allows one to ask the manager,
+	// if there are running analyses
+	CloseChannel chan bool
+	// logger is a special logger for this manager used for all logging in
+	// the manager-context
+	logger *log.Logger
 }
 
+// NewManager creates a new manager for the given id with the given InputEventChannel and ControlEventChannel.
+// In the end the manager is started as an extra goroutine and the created manager is returned.
 func NewManager(InputEventChannel chan Event, ControlEventChannel chan Event, id string) *Manager {
 	manager := Manager{
 		InputEventChannel:    InputEventChannel,
@@ -407,6 +455,8 @@ func NewManager(InputEventChannel chan Event, ControlEventChannel chan Event, id
 	return &manager
 }
 
+// run starts the manager for the step specified by id and also creates the
+// corresponding logger. If a new manager is added this needs to be modified.
 func (manager *Manager) run(id string) error {
 	switch {
 	case id == "ssl":
@@ -435,14 +485,24 @@ func (manager *Manager) run(id string) error {
 	return nil
 }
 
+// ErrorHandler defines a unit that is responsible for handling the diffrent event
+// errors that can occur
 type ErrorHandler struct {
-	errorList         []Event
+	// errorList is queue with all the errors that need to be handled
+	errorList []Event
+	// InputEventChannel is a channel for incoming events that
+	// experienced an error during analysis
 	InputEventChannel chan Event
-	QuestionChannel   chan bool
-	channelMap        map[string][2]chan Event
-	useing            map[string]bool
+	// QuestionChannel  is a channel which allows one to ask the ErrorHandler,
+	// if there are still errors in his queue
+	QuestionChannel chan bool
+	// channelMap maps the senderID to the corresponding Input- and OutputEventChannel
+	channelMap map[string][2]chan Event
+	// useing maps the senderID to a bool, which is true if the specified step is used
+	useing map[string]bool
 }
 
+// NewErrorHandler creates and starts an errorHandler with the specified parameters.
 func NewErrorHandler(InputEventChannel chan Event, QuestionChannel chan bool, channelMap map[string][2]chan Event, useing map[string]bool) *ErrorHandler {
 	errorHandler := ErrorHandler{
 		InputEventChannel: InputEventChannel,
@@ -454,44 +514,48 @@ func NewErrorHandler(InputEventChannel chan Event, QuestionChannel chan bool, ch
 	return &errorHandler
 }
 
+// run starts the ErrorHandler
 func (errorHandler *ErrorHandler) run() {
+	// setting logger for ErrorHandler
 	logger := log.New(io.MultiWriter(os.Stdout, logFile), "ErrHand: ", log.Ltime|log.Ldate)
 	if logLevel >= LOG_NOTICE {
 		logger.Println("[NOTICE] ErrorHandler started")
 	}
+
 	for {
 		select {
-		//Receive Error from Control
+		// Receive Error from Control
 		case e := <-errorHandler.InputEventChannel:
 			if logLevel >= LOG_INFO {
 				logger.Printf("[INFO] Received Error for %v from %v", e.host, e.senderID)
 			}
 			e.tries = 0
-			//add Error to the ErrorQueue
+			// add Error to the ErrorQueue
 			errorHandler.errorList = append(errorHandler.errorList, e)
 			break
-		//Receive Error Check from Control
+		// Receive Error Check from Control
 		case <-errorHandler.QuestionChannel:
 			if logLevel >= LOG_DEBUG {
 				logger.Println("[DEBUG] Error Check from Control received")
 			}
 			if len(errorHandler.errorList) == 0 {
-				//No more Errors
+				// No more Errors
 				errorHandler.QuestionChannel <- true
 			} else {
-				//Still errors
+				// Still errors
 				errorHandler.QuestionChannel <- false
 			}
 			break
 		default:
-			//Select an Error and try to send it to the next manager
+			// Select an Error and try to send it to the next manager
 			if len(errorHandler.errorList) != 0 {
+				// get next error in queue
 				var tryEvent Event
 				tryEvent, errorHandler.errorList = errorHandler.errorList[0], errorHandler.errorList[1:]
 				var channel chan Event
+				// select channel to send this error to according to sender
+				// and errorType
 				if tryEvent.eventType == FINISHED {
-
-					//Select target channel for error
 					switch tryEvent.senderID {
 					case "labs":
 						channel = errorHandler.channelMap["labs"][1]
@@ -512,9 +576,11 @@ func (errorHandler *ErrorHandler) run() {
 					}
 				} else if tryEvent.eventType == REERROR {
 					channel = errorHandler.channelMap[tryEvent.senderID][0]
+				} else if tryEvent.eventType == FATAL {
+					channel = errorHandler.channelMap["sql"][0]
 				}
 
-				//Try sending error
+				// Try sending error
 				select {
 				case channel <- tryEvent:
 					if logLevel >= LOG_INFO {
@@ -522,7 +588,7 @@ func (errorHandler *ErrorHandler) run() {
 					}
 					break
 				case <-time.After(time.Millisecond * 100):
-					//Timeout try next error in ErrorQueue
+					// Timeout: put error at the back of the queue
 					errorHandler.errorList = append(errorHandler.errorList, tryEvent)
 					break
 				}
@@ -535,19 +601,34 @@ func (errorHandler *ErrorHandler) run() {
 
 }
 
+// MasterManager defines a manager that is responsible for building the analysis chain
+// and maintaining it. Therefore it is referred to as control.
 type MasterManager struct {
-	hostProvider        *HostProvider
-	InputEventChannel   chan Event
-	OutputEventChannel  chan Event
+	// hostProvider contains all hosts that need to be analyzed
+	hostProvider *hostProvider
+	// InputEventChannel is a channel which receives events, that passed the
+	// analysis chain
+	InputEventChannel chan Event
+	// OutputEventChannel is the channel through which control sends events
+	// to the analysis chain
+	OutputEventChannel chan Event
+	// ControlEventChannel is used to receive events that failed in a manager
 	ControlEventChannel chan Event
-	MainChannel         chan bool
-	useing              map[string]bool
-	results             *LabsResults
-	managerList         []Manager
-	logger              *log.Logger
+	// MainChannel is used to signal main, that the analysis is complete
+	MainChannel chan bool
+	// useing is a map that defines which steps are used during analysis
+	useing map[string]bool
+	// results contains the results of all hosts
+	results *LabsResults
+	// managerList is list of all active managers
+	managerList []Manager
+	// logger specifies the logger in the control context
+	logger *log.Logger
 }
 
-func NewMasterManager(hostProvider *HostProvider, useing map[string]bool) *MasterManager {
+// NewMasterManager creates and starts a control manager that starts a analysis chain useing the steps
+// defined by useing and analyses the host in hostProvider
+func NewMasterManager(hostProvider *hostProvider, useing map[string]bool) *MasterManager {
 	manager := MasterManager{
 		hostProvider:        hostProvider,
 		ControlEventChannel: make(chan Event),
@@ -565,9 +646,11 @@ func NewMasterManager(hostProvider *HostProvider, useing map[string]bool) *Maste
 	return &manager
 }
 
+// buildChain builds the manager chain defined  useing in MasterManager
 func (manager *MasterManager) buildChain() {
 	num := 0
 	for _, id := range chain {
+		// manager output is the input of the next manager in the chain
 		if manager.useing[id] {
 			if num == 0 {
 				manager.managerList[num] = *NewManager(manager.OutputEventChannel, manager.ControlEventChannel, id)
@@ -580,48 +663,68 @@ func (manager *MasterManager) buildChain() {
 	}
 }
 
+// handleResults defines what to do with the final results received by control.
+// They are appended to the result-list of control
 func (manager *MasterManager) handleResult(e Event) {
 	manager.results.reports = append(manager.results.reports, *e.report)
 	manager.results.responses = append(manager.results.responses, e.report.rawJSON)
 }
 
+// checkCloseManager tests if there are events handled by the given manager at
+// the moment. If so it returns true
 func checkCloseManager(manager Manager) bool {
 	select {
+	// ask manager
 	case manager.CloseChannel <- true:
 		select {
+		// receive answer
 		case b := <-manager.CloseChannel:
 			if !b {
+				// manager still working: false
 				return false
 			}
+			// no answer: false
 		case <-time.After(time.Millisecond * 500):
 			return false
 		}
+	// not reached: false
 	case <-time.After(time.Millisecond * 500):
 		return false
 	}
-	//No more active assesments for manager
+	// No more active assessments for manager
 	return true
 }
 
+// checkClose tests if there are errors in errHs error queue at the moment. If so it
+// returns true
 func checkCloseErr(errH *ErrorHandler) bool {
 	select {
+	// ask error handler
 	case errH.QuestionChannel <- true:
 		select {
+		// receive answer
 		case b := <-errH.QuestionChannel:
 			if !b {
+				// error handler still working: false
 				return false
 			}
+		// no answer: false
 		case <-time.After(time.Millisecond * 500):
 			return false
 		}
+	// not reached: false
 	case <-time.After(time.Millisecond * 500):
 		return false
 	}
-	//No more active assesments for errH
+	// No more active assessments for errH
 	return true
 }
 
+// checkClose checks if all managers have finished their work. If so it
+// returns true
 func (manager *MasterManager) checkClose(errH *ErrorHandler) bool {
+	// check every used manager once and the error Handler every time
+	// when a manager is checked
 	for _, id := range manager.managerList {
 		if !checkCloseManager(id) {
 			return false
@@ -633,16 +736,18 @@ func (manager *MasterManager) checkClose(errH *ErrorHandler) bool {
 	return true
 }
 
+// run starts running the manager
 func (manager *MasterManager) run() {
 	if logLevel >= LOG_NOTICE {
 		manager.logger.Println("[NOTICE] Control-Manager started")
 	}
-	//starting needed managers and assign their channels
+	// starting needed managers and assign their channels
 	manager.buildChain()
 	if logLevel >= LOG_DEBUG {
 		manager.logger.Println("[DEBUG] Manager-chain build successful")
 	}
 
+	// creating channelMap for error handler
 	var channelMap = make(map[string][2]chan Event, len(chain))
 	num := 0
 	for _, id := range chain {
@@ -652,25 +757,26 @@ func (manager *MasterManager) run() {
 			num = num + 1
 		}
 	}
+	// create channels for the error handler
 	var errorChan = make(chan Event)
 	var errorQuestionChan = make(chan bool)
-	//Starting ErrorHandler for failed entries
+	// Starting ErrorHandler for failed entries
 	errH := NewErrorHandler(errorChan, errorQuestionChan, channelMap, manager.useing)
 
 	if logLevel >= LOG_DEBUG {
 		manager.logger.Println("[DEBUG] ErrorHandler started successful")
 	}
 
-	//Input-Channel for Control is the last output channel
+	// Input-Channel for Control is the last output channel
 	manager.InputEventChannel = manager.managerList[num-1].OutputEventChannel
 
-	//Get first host-enty for testing
+	// Get first hostEnrty for testing
 	host, hasNext := manager.hostProvider.next()
 
 	var e Event
-	//create empty Event for host if there is one
+	// create empty Event for host if there is one
 	if hasNext {
-		e = Event{host, "master", 0, nil, 0, false}
+		e = Event{host, "master", 0, nil, 0, true}
 		report := LabsReport{
 			Host:      e.host,
 			Reachable: "unknown",
@@ -683,7 +789,7 @@ func (manager *MasterManager) run() {
 		}
 		e.report = &report
 	} else {
-		//Stop if there is no host in the list
+		// Stop if there is no host in the list
 		if logLevel >= LOG_ERROR {
 			manager.logger.Println("[ERROR] The given HostList is empty. Stopping execution")
 		}
@@ -691,24 +797,25 @@ func (manager *MasterManager) run() {
 		return
 	}
 
+	// hasElements is true if there are still events to send for control
 	hasElements := true
 
-	//Starting Control-Loop
+	// Starting Control-Loop
 	if logLevel >= LOG_NOTICE {
 		manager.logger.Println("[NOTICE] Starting Control-Loop")
 	}
 	for {
-		//If there are still unsent entries
+		// If there are still unsent entries
 		if hasElements {
 			select {
 			case manager.OutputEventChannel <- e:
 				if logLevel >= LOG_DEBUG {
 					manager.logger.Printf("[DEBUG] %v is next in line for assessment", e.host)
 				}
-				//Get next host-entry
+				// Get next host-entry
 				host, hasNext := manager.hostProvider.next()
 				if hasNext {
-					e = Event{host, "master", 0, nil, 0, false}
+					e = Event{host, "master", 0, nil, 0, true}
 					report := LabsReport{
 						Host:      e.host,
 						Reachable: "unknown",
@@ -721,7 +828,7 @@ func (manager *MasterManager) run() {
 					}
 					e.report = &report
 				} else {
-					//No more hosts in the list
+					// No more hosts in the list
 					if logLevel >= LOG_NOTICE {
 						manager.logger.Println("[NOTICE] Assessment for all hosts has started")
 					}
@@ -729,7 +836,7 @@ func (manager *MasterManager) run() {
 				}
 				break
 			case cE := <-manager.ControlEventChannel:
-				//Handle Messages on the Control-Channel
+				// Handle Messages on the Control-Channel (Errors)
 				switch cE.eventType {
 				case ERROR:
 					if logLevel >= LOG_INFO {
@@ -762,10 +869,25 @@ func (manager *MasterManager) run() {
 						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
 					}
 					errorChan <- cE
+				case FATAL:
+					if logLevel >= LOG_INFO {
+						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", e.host, e.senderID)
+					}
+					if manager.useing["sql"] {
+						if logLevel >= LOG_DEBUG {
+							manager.logger.Println("[DEBUG] Sending Fatal Error to ErrorHandler")
+						}
+						errorChan <- cE
+					} else {
+						if logLevel >= LOG_DEBUG {
+							manager.logger.Println("[DEBUG] Finishing Fatal Error")
+						}
+						manager.handleResult(cE)
+					}
 				}
 				break
 			case iE := <-manager.InputEventChannel:
-				//Handle incomming results
+				// Handle incoming results
 				if logLevel >= LOG_INFO {
 					manager.logger.Printf("[INFO] Results for %v received", e.host)
 				}
@@ -776,9 +898,10 @@ func (manager *MasterManager) run() {
 				break
 			}
 		} else {
+			// same as before but with no more sending. Instead checking if analysis is finished
 			select {
 			case cE := <-manager.ControlEventChannel:
-				//Handle Messages on the Control-Channel
+				// Handle Messages on the Control-Channel
 				switch cE.eventType {
 				case ERROR:
 					if logLevel >= LOG_INFO {
@@ -806,11 +929,31 @@ func (manager *MasterManager) run() {
 						}
 						break
 					}
+				case REERROR:
+					if logLevel >= LOG_INFO {
+						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
+					}
+					errorChan <- cE
+				case FATAL:
+					if logLevel >= LOG_INFO {
+						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", e.host, e.senderID)
+					}
+					if manager.useing["sql"] {
+						if logLevel >= LOG_DEBUG {
+							manager.logger.Println("[DEBUG] Sending Fatal Error to ErrorHandler")
+						}
+						errorChan <- cE
+					} else {
+						if logLevel >= LOG_DEBUG {
+							manager.logger.Println("[DEBUG] Finishing Fatal Error")
+						}
+						manager.handleResult(cE)
+					}
 
 				}
 				break
 			case iE := <-manager.InputEventChannel:
-				//Handle incomming results
+				// Handle incoming results
 				if logLevel >= LOG_INFO {
 					manager.logger.Printf("[INFO] Results for %v received", e.host)
 				}
@@ -820,7 +963,7 @@ func (manager *MasterManager) run() {
 				}
 				break
 			case <-time.After(time.Millisecond * 2000):
-				//Check if there is a channel ready for closing
+				// Check if there is no more manager or error handler running
 				if logLevel >= LOG_DEBUG {
 					manager.logger.Println("[DEBUG] Checking if scan is finished!")
 				}
@@ -828,7 +971,6 @@ func (manager *MasterManager) run() {
 					if logLevel >= LOG_NOTICE {
 						manager.logger.Println("[NOTICE] Scan complete")
 					}
-					//Are there still Errors to handle
 					close(manager.MainChannel)
 				}
 				if logLevel >= LOG_DEBUG {
@@ -840,6 +982,7 @@ func (manager *MasterManager) run() {
 	}
 }
 
+// parseLogLevel returns the loglevel corresponding to a string
 func parseLogLevel(level string) int {
 	switch {
 	case level == "error":
@@ -920,7 +1063,9 @@ func flattenAndFormatJSON(inputJSON []byte) *[]string {
 	return &flatStrings
 }
 
+// readLines reads all lines of a file. Returning a slice with all the lines
 func readLines(path *string) ([]string, error) {
+	// open File
 	file, err := os.Open(*path)
 	if err != nil {
 		return nil, err
@@ -929,6 +1074,7 @@ func readLines(path *string) ([]string, error) {
 
 	var lines []string
 	br := bufio.NewReader(file)
+	// read the byte order marking, if it exists
 	r, _, err := br.ReadRune()
 	if err != nil {
 		log.Fatalf("[ERROR] Failed reading Byte Order Marking: %v", err.Error())
@@ -936,6 +1082,7 @@ func readLines(path *string) ([]string, error) {
 	if r != '\uFEFF' {
 		br.UnreadRune()
 	}
+	// start reading lines
 	scanner := bufio.NewScanner(br)
 	for scanner.Scan() {
 		var line = strings.TrimSpace(scanner.Text())
@@ -962,9 +1109,10 @@ func validateHostname(hostname string) bool {
 	// but there are also no addresses
 	if err != nil || len(addrs) < 1 {
 		return false
-	} else {
-		return true
 	}
+
+	return true
+
 }
 
 func main() {
@@ -979,7 +1127,7 @@ func main() {
 	var conf_quiet = flag.Bool("quiet", false, "Disable status messages (logging)")
 	var conf_usecache = flag.Bool("usecache", false, "If true, accept cached results (if available), else force live scan.")
 	var conf_maxage = flag.Int("maxage", 0, "Maximum acceptable age of cached results, in hours. A zero value is ignored.")
-	var conf_verbosity = flag.String("verbosity", "notice", "Configure log verbosity: error, notice, info, debug, or trace.")
+	var conf_verbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace.")
 	var conf_version = flag.Bool("version", false, "Print version and API location information and exit")
 
 	//Added Flags
@@ -989,7 +1137,6 @@ func main() {
 	var conf_ssllabs = flag.Bool("no-ssllabs", false, "Don't use SSLlabs-Scan")
 	var conf_ssltest = flag.Bool("no-ssltest", false, "Don't test hosts before starting Scan")
 	var conf_sql = flag.Bool("no-sql", false, "Don't write results into the database")
-
 	var conf_sslTries = flag.Int("sslTest-tries", 2, "Number of tries if the sslTest fails")
 	var conf_labsTries = flag.Int("labs-tries", 1, "Number of tries if the sslLabs-Scan fails")
 	var conf_obsTries = flag.Int("obs-tries", 2, "Number of tries if the Observatory-Scan fails")
@@ -997,6 +1144,9 @@ func main() {
 
 	flag.Parse()
 
+	// Setup according to flags
+
+	// Setting max retries for all managers
 	sslTries = *conf_sslTries
 	obsTries = *conf_obsTries
 	labsTries = *conf_labsTries
@@ -1019,12 +1169,9 @@ func main() {
 
 	globalSQLRetries = *conf_sql_retries
 
+	// sql needs to know if observatory is used
 	if !*conf_observatory {
 		globalObservatory = true
-	}
-
-	if !*conf_securityheaders {
-		globalSecurityheaders = true
 	}
 
 	if *conf_version {
@@ -1092,8 +1239,11 @@ func main() {
 	if *conf_ssllabs && *conf_ssltest && *conf_observatory && *conf_securityheaders {
 		log.Fatal("[ERROR] At least one can has to be run!")
 	}
+
+	// set the steps to be used
 	var useing = map[string]bool{"labs": !*conf_ssllabs, "obs": !*conf_observatory, "secH": !*conf_securityheaders, "sql": !*conf_sql, "ssl": !*conf_ssltest}
 
+	// create files and directories for logging output and results
 	err := os.Mkdir("log", 0700)
 	if err != nil && os.IsNotExist(err) {
 		log.Fatalf("[FATAL] Could not create loggingFolder log: %v", err.Error())
@@ -1104,7 +1254,9 @@ func main() {
 		log.Fatalf("[FATAL] Could not create resultFolder res: %v", err.Error())
 	}
 
+	// files are named after this date-time schema
 	FileName := time.Now().Format("2006_01_02_150405")
+
 	logFile, err = os.Create("log/" + FileName + ".log")
 
 	if err != nil {
@@ -1119,12 +1271,16 @@ func main() {
 	}
 	defer resFile.Close()
 
-	hp := NewHostProvider(hostnames)
+	// create HostProvider containing the host that need to be analyzed
+	hp := newHostProvider(hostnames)
+
+	// start analysis by starting control
 	manager := NewMasterManager(hp, useing)
 
 	// Respond to events until all the work is done.
 	for {
 		_, running := <-manager.MainChannel
+		// print results to file and show elapsed time
 		if running == false {
 			var results []byte
 			var err error

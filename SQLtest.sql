@@ -1,1 +1,1 @@
-SELECT * FROM Certificates_Test WHERE CreationDate >= '2017/11/03 18:08:00.000';
+SELECT * FROM Certificates_Test WHERE CreationDate >= '2017/11/04 18:08:00.000';

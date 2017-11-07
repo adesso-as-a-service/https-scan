@@ -8,21 +8,23 @@ import (
 	"time"
 )
 
-//How often do we try
+//  sslTries is the maximum number of scan retries
 var sslTries = 2
 
-// How many assessment do we have in progress?
+// activeSslAssessments is the number of active assessments according to the manager
 var activeSslAssessments = 0
 
-// The maximum number of assessments we can have in progress at any one time.
+// maxSslAssessments is the maximal number of active assessments
 var maxSslAssessments = 10
 
+// NewSslAssessment starts the sslTest for an event
 func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "ssl"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
 	eventChannel <- e
 	var dialer = new(net.Dialer)
 	dialer.Timeout = 60 * time.Second
+	// check if tls connection is possible
 	conn, err := tls.DialWithDialer(dialer, "tcp", e.host+":443", nil)
 	if err == nil {
 		conn.Close()
@@ -30,16 +32,20 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 			logger.Printf("[DEBUG] SSL available for %v, continuing to API", e.host)
 		}
 	} else {
+
 		if !strings.Contains(err.Error(), "x509") {
 			if logLevel >= LOG_DEBUG {
 				logger.Printf("[DEBUG] SSL unavailable for %v: %v", e.host, err.Error())
 			}
 		} else {
+			// if it is an x509 error (mismatch) tls is still possible
 			if logLevel >= LOG_DEBUG {
 				logger.Printf("[DEBUG] SSL available for %v, with error: %v", e.host, err.Error())
 
 			}
 			e.eventType = INTERNAL_ASSESSMENT_COMPLETE
+			// Get first IpAddress for DB since we don't have one from the
+			// ssllabs-scan
 			ip, _ := net.LookupIP(e.host)
 			if ip != nil {
 				e.report.Endpoints[0].IpAddress = ip[0].String()
@@ -47,8 +53,10 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 			eventChannel <- e
 			return
 		}
+		// test normal connection
 		conn, err := net.DialTimeout("tcp", e.host+":http", 60*time.Second)
 		if err != nil {
+			// no connection possible
 			if logLevel >= LOG_INFO {
 				logger.Printf("[INFO] HTTP not available for %v, with error: %v", e.host, err.Error())
 			}
@@ -78,11 +86,13 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	eventChannel <- e
 }
 
+// startSslAssessment calls NewSslAssessments as a new goroutine
 func (manager *Manager) startSslAssessment(e Event) {
 	go NewSslAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSslAssessments++
 }
 
+// sslRun starts the manager responsible for testing the host connection
 func (manager *Manager) sslRun() {
 	if logLevel >= LOG_NOTICE {
 		manager.logger.Println("[NOTICE] SSLTest-Manager started")
@@ -100,10 +110,12 @@ func (manager *Manager) sslRun() {
 				if e.tries < sslTries {
 					manager.startSslAssessment(e)
 				} else {
+					// http connection is possible
 					e.eventType = ERROR
 					if logLevel >= LOG_ERROR {
 						manager.logger.Printf("[ERROR] SSLTest for %v ultimately failed", e.host)
 					}
+
 					e.https = false
 					e.report.Reachable = "http"
 					e.report.Endpoints[0].Grade = "70"
@@ -121,6 +133,7 @@ func (manager *Manager) sslRun() {
 				if logLevel >= LOG_ERROR {
 					manager.logger.Printf("[ERROR] Connection to %v not possible", e.host)
 				}
+				// no connection seems to be possible
 				e.eventType = FATAL
 				e.report.Reachable = "no"
 				e.report.Endpoints[0].Grade = "0"
@@ -150,11 +163,9 @@ func (manager *Manager) sslRun() {
 
 			}
 			break
+		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
 			manager.CloseChannel <- (activeSslAssessments == 0)
-
-		// Once a second, start a new assessment, provided there are
-		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
 

@@ -15,33 +15,33 @@ import (
 	"time"
 )
 
-var USER_AGENT = "ssllabs-scan v1.4.0 (stable $Id$)"
+// USER_AGENT tells the api which version is used
+var USER_AGENT = "ssllabs-scan v1.4.0 (stable $Id: 84740581ac9cc25312f1db3f80b94bb6a765d888 $)"
 
-// How often do we try
+// labsTries is the maximum number of scan retries
 var labsTries = 2
 
-// How many assessment do we have in progress?
+// activeLabsAssessments is the number of active assessments according to the manager
 var activeLabsAssessments = 0
 
-// How many assessments does the server think we have in progress?
+// currentLabsAssessments is the number of active assessments according to the api
 var currentLabsAssessments = -1
 
-// The maximum number of assessments we can have in progress at any one time.
+// maxLabsAssessments is the maximal number of active assessments the server allows us
 var maxLabsAssessments = -1
 
+// globalNewAssessmentCoolOff is the time waited between starting new assessments
+var globalNewAssessmentCoolOff int64 = 1100
+
+// requestCounter is the total number of requests send
 var requestCounter uint64 = 0
 
 var apiLocation = "https://api.ssllabs.com/api/v2"
 
 var httpClient *http.Client
 
-const (
-	INTERNAL_ASSESSMENT_FATAL    = -2
-	INTERNAL_ASSESSMENT_FAILED   = -1
-	INTERNAL_ASSESSMENT_STARTING = 0
-	INTERNAL_ASSESSMENT_COMPLETE = 1
-)
-
+// invokeGetRepeatedly sends command to api and keeps requesting until there are results
+// or an error
 func invokeGetRepeatedly(url string, logger *log.Logger) (*http.Response, []byte, error) {
 	retryCount := 0
 
@@ -162,6 +162,7 @@ func invokeGetRepeatedly(url string, logger *log.Logger) (*http.Response, []byte
 	}
 }
 
+// invokeApi begins the ssllabs-scan defined in command for the api and returns results
 func invokeApi(command string, logger *log.Logger) (*http.Response, []byte, error) {
 	var url = apiLocation + "/" + command
 
@@ -194,6 +195,7 @@ func invokeApi(command string, logger *log.Logger) (*http.Response, []byte, erro
 	}
 }
 
+// invokeInfo gets infos (maxAssessments etc) from api
 func invokeInfo(logger *log.Logger) (*LabsInfo, error) {
 	var command = "info"
 
@@ -212,6 +214,7 @@ func invokeInfo(logger *log.Logger) (*LabsInfo, error) {
 	return &labsInfo, nil
 }
 
+// invokeAnalyze builds the request command for the api and sends it to the api via invokeApi
 func invokeAnalyze(host string, startNew bool, fromCache bool, logger *log.Logger) (*LabsReport, error) {
 	var command = "analyze?host=" + host + "&all=done"
 
@@ -263,6 +266,8 @@ func invokeAnalyze(host string, startNew bool, fromCache bool, logger *log.Logge
 	}
 }
 
+// NewLabsAssessment starts the ssllabs-assessment of an event and communicates it
+// to the manager
 func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "labs"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
@@ -314,11 +319,13 @@ func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	eventChannel <- e
 }
 
+// startLabsAssessments starts every assessment as a goroutine
 func (manager *Manager) startLabsAssessment(e Event) {
 	go NewLabsAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeLabsAssessments++
 }
 
+// labsRun starts the manager responsible for the ssllabs-scan
 func (manager *Manager) labsRun() {
 	if logLevel >= LOG_NOTICE {
 		manager.logger.Println("[NOTICE] SSLLabs-Manager started")
@@ -378,8 +385,10 @@ func (manager *Manager) labsRun() {
 					manager.logger.Printf("[INFO] SSLLabs-Assessment for %v failed for the %v. time", e.host, e.tries)
 				}
 				if e.tries < labsTries {
+					// retry this event
 					manager.startLabsAssessment(e)
 				} else {
+					// event failed
 					e.eventType = ERROR
 					if logLevel >= LOG_ERROR {
 						manager.logger.Printf("[ERROR] SSLLabs-Assessment for %v ultimately failed", e.host)
@@ -389,6 +398,7 @@ func (manager *Manager) labsRun() {
 			}
 
 			if e.eventType == 429 {
+				// Error 429 occurred. Retry this later
 				activeLabsAssessments--
 				e.eventType = REERROR
 				if logLevel >= LOG_ERROR {
@@ -398,12 +408,15 @@ func (manager *Manager) labsRun() {
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
+				// Assessment started
 				if logLevel >= LOG_INFO {
 					manager.logger.Printf("[INFO] Assessment starting: %v", e.host)
 				}
 			}
 
 			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
+				// assessment complete, so this is https reachable
+				e.report.Reachable = "https"
 				if logLevel >= LOG_DEBUG {
 					msg := ""
 
@@ -444,6 +457,7 @@ func (manager *Manager) labsRun() {
 			}
 
 			break
+		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
 			manager.CloseChannel <- (activeLabsAssessments == 0)
 

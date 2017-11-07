@@ -1,2 +1,9 @@
 *~
+.*
 ssllabs-scan
+log
+results
+*.exe
+domain*
+sql_config.json
+SQLtest.sql

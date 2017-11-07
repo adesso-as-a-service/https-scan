@@ -13,15 +13,13 @@ import (
 	"golang.org/x/net/html"
 )
 
-var globalSecurityheaders bool
-
-//How often do we try
+// secHTries is the maximum number of scan retries
 var secHTries = 3
 
-// How many assessment do we have in progress?
+// activeSecHAssessments is the number of active assessments according to the manager
 var activeSecHAssessments = 0
 
-// The maximum number of assessments we can have in progress at any one time.
+// maxSecHAssessments is the maximal number of active assessments
 var maxSecHAssessments = 10
 
 // Securityheaders is the object used for unmarshalling the results by the API
@@ -36,6 +34,7 @@ type Securityheaders struct {
 	ReferrerPolicy          string
 }
 
+// parseResponse extracts the results of the securityheaders-scan out of the request response
 func parseResponse(r io.Reader) *Securityheaders {
 	z := html.NewTokenizer(r)
 	var secH Securityheaders
@@ -65,9 +64,11 @@ func parseResponse(r io.Reader) *Securityheaders {
 				if hh == html.TextToken {
 					h := z.Token()
 					switch h.Data {
+					// we are in the Raw Headers now
 					case "Raw Headers":
 						isRaw = true
 						break
+					// we are in the missing headers now
 					case "Missing Headers":
 						isRaw = false
 						isMissing = true
@@ -80,6 +81,7 @@ func parseResponse(r io.Reader) *Securityheaders {
 				if hh == html.TextToken {
 					h := z.Token()
 					switch h.Data {
+					// save Results according to the current section
 					case "X-Frame-Options":
 						if isMissing {
 							secH.XFrameOptions = "missing"
@@ -222,6 +224,7 @@ func (analyzeResponse *LabsReport) invokeSecurityHeaders(host string, supportsSS
 	return nil
 }
 
+// NewSecHAssessment starts the securityheaders assessment of an event
 func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "secH"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
@@ -253,11 +256,13 @@ func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	eventChannel <- e
 }
 
+// startSecHAssessment calls NewSecHAssessments as a new goroutine
 func (manager *Manager) startSecHAssessment(e Event) {
 	go NewSecHAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSecHAssessments++
 }
 
+// secHRun starts the manager responsible for the securityheaders-scan
 func (manager *Manager) secHRun() {
 	for {
 		select {
@@ -304,11 +309,9 @@ func (manager *Manager) secHRun() {
 				}
 			}
 			break
+		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
 			manager.CloseChannel <- (activeSecHAssessments == 0)
-
-		// Once a second, start a new assessment, provided there are
-		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
 
@@ -320,7 +323,7 @@ func (manager *Manager) secHRun() {
 						manager.logger.Println("[DEBUG] New event received")
 					}
 					manager.startSecHAssessment(e)
-				case <-time.After(time.Millisecond * 100):
+				case <-time.After(time.Millisecond * 500):
 					break
 				}
 			}

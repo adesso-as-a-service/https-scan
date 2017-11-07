@@ -13,14 +13,19 @@ import (
 	"time"
 )
 
+// globalObservatory signals sqlWriter if observatory-scan is used
+var globalObservatory bool
+
+// globalSQLRetries is the number of retries used for sql
 var globalSQLRetries = -1
 
-// How many assessment do we have in progress?
+// activeSqlAssessments is the number of active assessments according to the manager
 var activeSqlAssessments = 0
 
-// The maximum number of assessments we can have in progress at any one time.
+// maxSqlAssessments is the maximal number of active assessments
 var maxSqlAssessments = 5
 
+// SqlConfiguration contains the data needed to connect to the sql-server
 type SqlConfiguration struct {
 	SqlServer     string
 	SqlUserId     string
@@ -34,6 +39,7 @@ func msUnixToTime(ms int64) time.Time {
 	return time.Unix(0, ms*int64(time.Millisecond))
 }
 
+// readSqlConfig extracts the information out of the "sql_config.json" file
 func readSqlConfig(file string, logger *log.Logger) SqlConfiguration {
 	configFile, err := os.Open("sql_config.json")
 	if err != nil {
@@ -49,6 +55,9 @@ func readSqlConfig(file string, logger *log.Logger) SqlConfiguration {
 	return configuration
 }
 
+// writeToDb writes a report to the specified database.
+// The write is hard coded and needs to be changed, when adding new columns
+// or when the form of data changes.
 func writeToDb(report *LabsReport, logger *log.Logger) error {
 	// Insert Infos into Database
 	currentReport := report
@@ -217,6 +226,7 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 	return nil
 }
 
+// NewqlAssessment starts process of writing the event results in the database
 func NewSqlAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	e.senderID = "sql"
 	e.eventType = INTERNAL_ASSESSMENT_STARTING
@@ -244,11 +254,13 @@ func NewSqlAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 	eventChannel <- e
 }
 
+// startSqlAssessment calls NewSqlAssessments as a new goroutine
 func (manager *Manager) startSqlAssessment(e Event) {
 	go NewSqlAssessment(e, manager.InternalEventChannel, manager.logger)
 	activeSqlAssessments++
 }
 
+// sqlRun starts the manager responsible for writing results in the database
 func (manager *Manager) sqlRun() {
 	for {
 		select {
@@ -292,10 +304,9 @@ func (manager *Manager) sqlRun() {
 			}
 
 			break
+		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
 			manager.CloseChannel <- (activeSqlAssessments == 0)
-		// Once a second, start a new assessment, provided there are
-		// hostnames left and we're not over the concurrent assessment limit.
 		default:
 			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
 
