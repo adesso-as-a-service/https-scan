@@ -1,0 +1,147 @@
+package main
+
+import (
+	"log"
+	"time"
+)
+
+/* To add a new API go through the following steps
+
+  1. Define a short id-String (in the example "api")
+  2. Place the id-String to chain in control.go according to the wanted placement
+	 in the the manager chain
+  3. Add ApiResult-Field to LabsReport in control.go
+  4. Complete this go-file and rename according to your selected id-String
+  6. Add logging useing the defined logger
+  7. Add error-handling to ErrorHandler.run() in control.go
+  8. Add reference to apiRun() in Manager.run(id string) in control.go
+  9. Add flags needed for api to main() in control.go
+	 (api-retries, no-api etc)
+ 10. Add api-results to sqlWriter.go query and db.Exec()
+
+
+
+
+*/
+
+// ApiTries is the maximum number of scan retries
+var ApiTries int
+
+// activeApiAssessments is the number of active assessments according to the manager
+var activeApiAssessments = 0
+
+// maxApiHAssessments is the maximal number of active assessments
+var maxApiAssessments = 10
+
+// NewApiAssessment defines how a host (event) is handled
+func NewApiAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
+	// Take possession of the event
+	e.senderID = "api"
+	e.eventType = INTERNAL_ASSESSMENT_STARTING
+	// Inform Manager that the assessment of e has started
+	eventChannel <- e
+
+	// TODO: Handle Assessment with the API
+
+	// TODO: Add error-Case
+	//       Add new Errors
+	if "ASSESSMENT FAILED" {
+		e.eventType = INTERNAL_ASSESSMENT_FAILED
+		eventChannel <- e
+	}
+
+	// TODO: Everything went fine
+	e.eventType = INTERNAL_ASSESSMENT_COMPLETE
+	// Add results
+	e.report.ApiResult = results
+	eventChannel <- e
+}
+
+// startApiAssessment handles the starting of assessments
+func (manager *Manager) startApiAssessment(e Event) {
+	// Handle assessments concurrently
+	go NewApiAssessment(e, manager.InternalEventChannel, manager.logger)
+	// update activeApiAssessments
+	activeApiAssessments++
+}
+
+// apiRun starts the manager responsible for the api-scan
+func (manager *Manager) apiRun() {
+	for {
+		select {
+		// Handle assessment events (e.g., starting and finishing).
+		case e := <-manager.InternalEventChannel:
+			// assessment failed
+			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
+				// update activeAssessments
+				activeApiAssessments--
+				// update tries
+				e.tries++
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Api-Scan for %v failed for the %v. time", e.host, e.tries)
+				}
+				// are there still retries
+				if e.tries < secHTries {
+					// retry event
+					manager.startApiAssessment(e)
+				} else {
+					// no more retries. Scan failed
+					e.eventType = ERROR
+					if logLevel >= LOG_ERROR {
+						manager.logger.Printf("[ERROR] Api-Scan for %v ultimately failed", e.host)
+					}
+					manager.ControlEventChannel <- e
+				}
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSecHAssessments)
+				}
+			}
+
+			// Log start of assessment
+			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] ApiHead-Scan starting: %v", e.host)
+				}
+			}
+
+			// TODO: Handle self defined internal assessments
+
+			// Everything is fined
+			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
+				if logLevel >= LOG_DEBUG {
+					manager.logger.Printf("[DEBUG] SecHead-Scan for %v finished", e.host)
+				}
+
+				activeSecHAssessments--
+
+				e.eventType = FINISHED
+				e.senderID = "api"
+				manager.OutputEventChannel <- e
+				if logLevel >= LOG_INFO {
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSecHAssessments)
+				}
+			}
+			break
+		// if someone asked if there are still active assessments
+		case <-manager.CloseChannel:
+			manager.CloseChannel <- (activeApiAssessments == 0)
+		default:
+			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
+			// receive event from previous manager
+			if activeApiAssessments < maxApiAssessments {
+				select {
+				case e := <-manager.InputEventChannel:
+					e.tries = 0
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Println("[DEBUG] New event received")
+					}
+					manager.startApiAssessment(e)
+				case <-time.After(time.Millisecond * 500):
+					break
+				}
+			}
+
+			break
+		}
+	}
+}

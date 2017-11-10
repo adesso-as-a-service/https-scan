@@ -842,28 +842,8 @@ func (manager *MasterManager) run() {
 					if logLevel >= LOG_INFO {
 						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
 					}
-					switch cE.senderID {
-					case "ssl":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					case "labs":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					case "obs":
-						cE.eventType = FINISHED
-						errorChan <- cE
-					case "secH":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					default:
-						if logLevel >= LOG_WARNING {
-							manager.logger.Printf("[WARNING] Assessment of %v has ultimately failed in %v", e.host, e.senderID)
-						}
-						break
-					}
+					cE.eventType = FINISHED
+					errorChan <- cE
 				case REERROR:
 					if logLevel >= LOG_INFO {
 						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
@@ -907,28 +887,8 @@ func (manager *MasterManager) run() {
 					if logLevel >= LOG_INFO {
 						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
 					}
-					switch cE.senderID {
-					case "ssl":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					case "labs":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					case "obs":
-						cE.eventType = FINISHED
-						errorChan <- cE
-					case "secH":
-						cE.eventType = FINISHED
-						errorChan <- cE
-						break
-					default:
-						if logLevel >= LOG_WARNING {
-							manager.logger.Printf("[WARNING] Assessment of %v has ultimately failed in %v", e.host, e.senderID)
-						}
-						break
-					}
+					cE.eventType = FINISHED
+					errorChan <- cE
 				case REERROR:
 					if logLevel >= LOG_INFO {
 						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
@@ -1137,20 +1097,20 @@ func main() {
 	var conf_ssllabs = flag.Bool("no-ssllabs", false, "Don't use SSLlabs-Scan")
 	var conf_ssltest = flag.Bool("no-ssltest", false, "Don't test hosts before starting Scan")
 	var conf_sql = flag.Bool("no-sql", false, "Don't write results into the database")
-	var conf_sslTries = flag.Int("sslTest-tries", 2, "Number of tries if the sslTest fails")
-	var conf_labsTries = flag.Int("labs-tries", 1, "Number of tries if the sslLabs-Scan fails")
-	var conf_obsTries = flag.Int("obs-tries", 2, "Number of tries if the Observatory-Scan fails")
-	var conf_secHTries = flag.Int("secH-tries", 3, "Number of tries if the Securityheader-Scan fails")
+	var conf_sslTries = flag.Int("sslTest-retries", 1, "Number of retries if the sslTest fails")
+	var conf_labsTries = flag.Int("labs-retries", 0, "Number of retries if the sslLabs-Scan fails")
+	var conf_obsTries = flag.Int("obs-retries", 1, "Number of retries if the Observatory-Scan fails")
+	var conf_secHTries = flag.Int("secH-retries", 2, "Number of retries if the Securityheader-Scan fails")
 
 	flag.Parse()
 
 	// Setup according to flags
 
 	// Setting max retries for all managers
-	sslTries = *conf_sslTries
-	obsTries = *conf_obsTries
-	labsTries = *conf_labsTries
-	secHTries = *conf_secHTries
+	sslTries = *conf_sslTries + 1
+	obsTries = *conf_obsTries + 1
+	labsTries = *conf_labsTries + 1
+	secHTries = *conf_secHTries + 1
 
 	if sslTries < 1 {
 		sslTries = 1
