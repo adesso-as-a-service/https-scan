@@ -1,4 +1,4 @@
-USE [smarthouse_statistics]
+USE [xxxx] -- Add TableName
 GO
 SET ANSI_NULLS ON
 GO

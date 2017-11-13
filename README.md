@@ -58,6 +58,10 @@ execution path. To write the results to a SQL-Database, there needs to be a sql_
 the execution path, containing connection-information. You can find an example-file 
 ["sql_config.json.example"](./sql_config.json.example) in the git.
 
+### SQL-Table
+
+Create the SQL-Table needed by this program, according to the file ["createSQLTable.sql"]{./createSQLTable.sql}  
+
 
 ## Adding a new API
 
