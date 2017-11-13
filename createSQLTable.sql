@@ -108,7 +108,7 @@ CREATE TABLE [dbo].[Certificates](
 	[SecurityHeadersReferrerPolicy] [nvarchar](max) NULL,
 	[ObservatoryRating] [nvarchar](10) NULL,
 	[ObservatoryPassFail] [nvarcahr](10) NULL,
-	[ObservatoryIssues] [nvarchar] (max9 NULL,
+	[ObservatoryIssues] [nvarchar] (max) NULL,
  CONSTRAINT [PK_Certificates] PRIMARY KEY CLUSTERED
 (
 	[Id] ASC
