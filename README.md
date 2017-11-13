@@ -60,7 +60,7 @@ the execution path, containing connection-information. You can find an example-f
 
 ### SQL-Table
 
-Create the SQL-Table needed by this program, according to the file ["createSQLTable.sql"]{./createSQLTable.sql}  
+Create the SQL-Table needed by this program, according to the file ["createSQLTable.sql"](./createSQLTable.sql)
 
 
 ## Adding a new API
