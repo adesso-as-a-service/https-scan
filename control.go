@@ -426,9 +426,9 @@ type Manager struct {
 	InputEventChannel chan Event
 	// OutputEventChannel is a channel for outgoing finished events
 	OutputEventChannel chan Event
-	// InternalEventChannel is a channel which is used for communication
+	// internalEventChannel is a channel which is used for communication
 	// with concurrently running analyses
-	InternalEventChannel chan Event
+	internalEventChannel chan Event
 	// ControlEventChannel is a channel to communicate errors to the Control-Manager
 	ControlEventChannel chan Event
 	// CloseChannel is a channel which allows one to ask the manager,
@@ -445,7 +445,7 @@ func NewManager(InputEventChannel chan Event, ControlEventChannel chan Event, id
 	manager := Manager{
 		InputEventChannel:    InputEventChannel,
 		OutputEventChannel:   make(chan Event),
-		InternalEventChannel: make(chan Event),
+		internalEventChannel: make(chan Event),
 		ControlEventChannel:  ControlEventChannel,
 		CloseChannel:         make(chan bool),
 	}

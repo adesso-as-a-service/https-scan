@@ -258,7 +258,7 @@ func NewSecHAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 // startSecHAssessment calls NewSecHAssessments as a new goroutine
 func (manager *Manager) startSecHAssessment(e Event) {
-	go NewSecHAssessment(e, manager.InternalEventChannel, manager.logger)
+	go NewSecHAssessment(e, manager.internalEventChannel, manager.logger)
 	activeSecHAssessments++
 }
 
@@ -267,7 +267,7 @@ func (manager *Manager) secHRun() {
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.InternalEventChannel:
+		case e := <-manager.internalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSecHAssessments--
 				e.tries++

@@ -321,7 +321,7 @@ func NewLabsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 // startLabsAssessments starts every assessment as a goroutine
 func (manager *Manager) startLabsAssessment(e Event) {
-	go NewLabsAssessment(e, manager.InternalEventChannel, manager.logger)
+	go NewLabsAssessment(e, manager.internalEventChannel, manager.logger)
 	activeLabsAssessments++
 }
 
@@ -376,7 +376,7 @@ func (manager *Manager) labsRun() {
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.InternalEventChannel:
+		case e := <-manager.internalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 
 				activeLabsAssessments--

@@ -348,7 +348,7 @@ func NewObsAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 // startObsAssessment calls NewObsAssessments as a new goroutine
 func (manager *Manager) startObsAssessment(e Event) {
-	go NewObsAssessment(e, manager.InternalEventChannel, manager.logger)
+	go NewObsAssessment(e, manager.internalEventChannel, manager.logger)
 	activeObsAssessments++
 }
 
@@ -357,7 +357,7 @@ func (manager *Manager) obsRun() {
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.InternalEventChannel:
+		case e := <-manager.internalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				if logLevel >= LOG_NOTICE {
 					manager.logger.Printf("Obs Active assessments: %v ", activeObsAssessments)

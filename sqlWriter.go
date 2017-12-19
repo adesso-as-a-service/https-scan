@@ -256,7 +256,7 @@ func NewSqlAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 // startSqlAssessment calls NewSqlAssessments as a new goroutine
 func (manager *Manager) startSqlAssessment(e Event) {
-	go NewSqlAssessment(e, manager.InternalEventChannel, manager.logger)
+	go NewSqlAssessment(e, manager.internalEventChannel, manager.logger)
 	activeSqlAssessments++
 }
 
@@ -265,7 +265,7 @@ func (manager *Manager) sqlRun() {
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.InternalEventChannel:
+		case e := <-manager.internalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				if logLevel >= LOG_INFO {
 					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
