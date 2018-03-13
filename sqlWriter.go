@@ -299,7 +299,7 @@ func (manager *Manager) sqlRun() {
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Active assessments: %v (more: %v)", activeSqlAssessments)
+					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
 				}
 			}
 
