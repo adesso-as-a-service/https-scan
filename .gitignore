@@ -6,3 +6,4 @@ settings.json
 sql_config.json
 *.exe
 domain*
+test.txt

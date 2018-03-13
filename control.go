@@ -592,7 +592,7 @@ func (manager *MasterManager) checkClose(errH *ErrorHandler) bool {
 			return true
 		}
 		if !checkCloseManager(id) {
-			manager.logger.Printf("[DEBUG] Manager with id %s is not finished yet", id)
+			manager.logger.Printf("[DEBUG] Manager with id %s is not finished yet", id.internalEventChannel)
 			return false
 		}
 		if !checkCloseErr(errH) {
