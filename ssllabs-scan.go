@@ -373,6 +373,7 @@ func (manager *Manager) labsRun() {
 		}
 	}
 
+	coolOff := time.NewTimer(time.Duration(globalNewAssessmentCoolOff) * time.Millisecond)
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
@@ -459,12 +460,12 @@ func (manager *Manager) labsRun() {
 			break
 		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
+			manager.logger.Println("[DEBUG] Close Question received!")
 			manager.CloseChannel <- (activeLabsAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
-		default:
-			<-time.NewTimer(time.Duration(globalNewAssessmentCoolOff) * time.Millisecond).C
+		case <-coolOff.C:
 
 			if currentLabsAssessments < maxLabsAssessments {
 				select {
@@ -475,10 +476,11 @@ func (manager *Manager) labsRun() {
 					}
 					manager.startLabsAssessment(e)
 				case <-time.After(time.Millisecond * 100):
+					manager.logger.Printf("[DEBUG] No new event received, currently %v active assessments", activeLabsAssessments)
 					break
 				}
 			}
-
+			coolOff = time.NewTimer(time.Duration(globalNewAssessmentCoolOff) * time.Millisecond)
 			break
 		}
 	}

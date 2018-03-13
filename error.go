@@ -60,7 +60,7 @@ func (errorHandler *ErrorHandler) run() {
 			if logLevel >= LOG_DEBUG {
 				logger.Println("[DEBUG] Error Check from Control received")
 			}
-			if len(errorHandler.errorList) == 0 {
+			if len(errorHandler.errorList) == 0 || errorHandler.errorList == nil {
 				// No more Errors
 				errorHandler.QuestionChannel <- true
 			} else {
@@ -134,14 +134,17 @@ func checkCloseErr(errH *ErrorHandler) bool {
 		case b := <-errH.QuestionChannel:
 			if !b {
 				// error handler still working: false
+				log.Println("[DEBUG] Error Handler still has errors!")
 				return false
 			}
 		// no answer: false
 		case <-time.After(time.Millisecond * 500):
+			log.Println("[DEBUG] Error Handler wont answer 'Closed Question'!")
 			return false
 		}
 	// not reached: false
 	case <-time.After(time.Millisecond * 500):
+		log.Println("[DEBUG] Error Handler wont receive 'Closed Question'!")
 		return false
 	}
 	// No more active assessments for errH

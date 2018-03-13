@@ -565,14 +565,17 @@ func checkCloseManager(manager Manager) bool {
 		case b := <-manager.CloseChannel:
 			if !b {
 				// manager still working: false
+				log.Println("[DEBUG] Manager send 'not finished yet'")
 				return false
 			}
 			// no answer: false
 		case <-time.After(time.Millisecond * 500):
+			log.Println("[DEBUG] No Answer received over Close Channel")
 			return false
 		}
 	// not reached: false
 	case <-time.After(time.Millisecond * 500):
+		log.Println("[DEBUG] Message couldn't be send over Close Channel")
 		return false
 	}
 	// No more active assessments for manager
@@ -585,10 +588,15 @@ func (manager *MasterManager) checkClose(errH *ErrorHandler) bool {
 	// check every used manager once and the error Handler every time
 	// when a manager is checked
 	for _, id := range manager.managerList {
+		if id == (Manager{}) {
+			return true
+		}
 		if !checkCloseManager(id) {
+			manager.logger.Printf("[DEBUG] Manager with id %s is not finished yet", id)
 			return false
 		}
 		if !checkCloseErr(errH) {
+			manager.logger.Println("[DEBUG] Error Handler still has Errors to handle")
 			return false
 		}
 	}

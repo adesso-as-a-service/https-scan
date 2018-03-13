@@ -88,7 +88,7 @@ func NewSslAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
 
 // startSslAssessment calls NewSslAssessments as a new goroutine
 func (manager *Manager) startSslAssessment(e Event) {
-	go NewSslAssessment(e, manager.InternalEventChannel, manager.logger)
+	go NewSslAssessment(e, manager.internalEventChannel, manager.logger)
 	activeSslAssessments++
 }
 
@@ -100,7 +100,7 @@ func (manager *Manager) sslRun() {
 	for {
 		select {
 		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.InternalEventChannel:
+		case e := <-manager.internalEventChannel:
 			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
 				activeSslAssessments--
 				e.tries++
