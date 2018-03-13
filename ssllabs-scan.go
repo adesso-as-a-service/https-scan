@@ -16,7 +16,7 @@ import (
 )
 
 // USER_AGENT tells the api which version is used
-var USER_AGENT = "ssllabs-scan v1.4.0 (stable $Id: 84740581ac9cc25312f1db3f80b94bb6a765d888 $)"
+var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id: 84740581ac9cc25312f1db3f80b94bb6a765d888 $)"
 
 // labsTries is the maximum number of scan retries
 var labsTries = 2
@@ -36,7 +36,7 @@ var globalNewAssessmentCoolOff int64 = 1100
 // requestCounter is the total number of requests send
 var requestCounter uint64 = 0
 
-var apiLocation = "https://api.ssllabs.com/api/v2"
+var apiLocation = "https://api.ssllabs.com/api/v3"
 
 var httpClient *http.Client
 

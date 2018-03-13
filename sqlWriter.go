@@ -63,6 +63,30 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 	currentReport := report
 	// Go through the endpoints and add information from within to variables that can be used
 	// When building the SQL-Query
+	var chainIssuers string
+	var subject string
+	var issuer string
+	var signatureAlg string
+	var keyAlg string
+	var keySize int
+	var chainSize int
+	var chainData string
+	var chainSha1Hashes string
+	var chainPinSha256 string
+	for m := range report.Cert {
+		currentChainCert := report.Cert[m]
+		chainIssuers += currentChainCert.IssuerSubject + "|"
+		subject += currentChainCert.Subject + "|"
+		issuer += currentChainCert.IssuerSubject + "|"
+		signatureAlg += currentChainCert.SigAlg + "|"
+		keyAlg += currentChainCert.KeyAlg + "|"
+		keySize = currentChainCert.KeySize
+		chainSize += len(currentChainCert.Raw)
+		chainData += currentChainCert.Raw + "\n"
+		chainSha1Hashes += currentChainCert.Sha1Hash + "|"
+		chainPinSha256 += currentChainCert.PinSha256 + "|"
+	}
+
 	for k := range currentReport.Endpoints {
 		currentEndpoint := currentReport.Endpoints[k]
 
@@ -99,16 +123,29 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 		}
 
 		var suites string
-		for m := range currentEndpoint.Details.Suites.List {
-			currentSuite := currentEndpoint.Details.Suites.List[m]
-			suites += currentSuite.Name + fmt.Sprintf(" (cStr: %v ", currentSuite.CipherStrength)
-			if currentSuite.EcdhStrength != 0 {
-				suites += fmt.Sprintf("ecdhStr: %v ", currentSuite.EcdhStrength)
+		for n := range currentEndpoint.Details.Suites {
+			suites += "{"
+			switch currentEndpoint.Details.Suites[n].Protocol {
+			case 2:
+				suites += "SSL2: "
+			case 768:
+				suites += "SSL3: "
+			case 769:
+				suites += "TLS1.0: "
+			case 770:
+				suites += "TLS1.1: "
+			case 771:
+				suites += "TLS1.2: "
+			case 772:
+				suites += "TLS1.3: "
 			}
-			if currentSuite.EcdhBits != 0 {
-				suites += fmt.Sprintf("ecdhBits: %v", currentSuite.EcdhBits)
+			for m := range currentEndpoint.Details.Suites[n].List {
+				currentSuite := currentEndpoint.Details.Suites[n].List[m]
+				suites += currentSuite.Name + fmt.Sprintf(" (cStr: %v ", currentSuite.CipherStrength)
+				suites += fmt.Sprintf("kxStr: %v ", currentSuite.KxStrength)
+				suites += ")"
 			}
-			suites += ")"
+			suites += "}"
 		}
 
 		var sims string
@@ -128,33 +165,9 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 		hpkpRoPolicy, err := json.Marshal(currentEndpoint.Details.HpkpRoPolicy)
 
 		var hstsPolicyDirectives string
-		hstsPolicyDirectives += fmt.Sprintf("max-age : \"%v\" ;", currentEndpoint.Details.HstsPolicy.Directives.MaxAge)
-		hstsPolicyDirectives += fmt.Sprintf("includesubdomains : \"%v\" ;", currentEndpoint.Details.HstsPolicy.Directives.Includesubdomains)
-		hstsPolicyDirectives += fmt.Sprintf("preload : \"%v\" ;", currentEndpoint.Details.HstsPolicy.Directives.Preload)
-
-		var chainIssuers string
-		var subject string
-		var issuer string
-		var signatureAlg string
-		var keyAlg string
-		var keySize int
-		var chainSize int
-		var chainData string
-		var chainSha1Hashes string
-		var chainPinSha256 string
-		for m := range currentEndpoint.Details.Chain.Certs {
-			currentChainCert := currentEndpoint.Details.Chain.Certs[m]
-			chainIssuers += currentChainCert.IssuerLabel + "|"
-			subject += currentChainCert.Subject + "|"
-			issuer += currentChainCert.IssuerLabel + "|"
-			signatureAlg += currentChainCert.SigAlg + "|"
-			keyAlg += currentChainCert.KeyAlg + "|"
-			keySize = currentChainCert.KeySize
-			chainSize += len(currentChainCert.Raw)
-			chainData += currentChainCert.Raw + "\n"
-			chainSha1Hashes += currentChainCert.Sha1Hash + "|"
-			chainPinSha256 += currentChainCert.PinSha256 + "|"
-		}
+		hstsPolicyDirectives += fmt.Sprintf("max-age : \"%v\" ;", currentEndpoint.Details.HstsPolicy.MaxAge)
+		hstsPolicyDirectives += fmt.Sprintf("includesubdomains : \"%v\" ;", currentEndpoint.Details.HstsPolicy.IncludeSubDomains)
+		hstsPolicyDirectives += fmt.Sprintf("preload : \"%v\" ;", currentEndpoint.Details.HstsPolicy.Preload)
 
 		var observatoryPassFail string
 		var observatoryDescriptions string
@@ -169,7 +182,7 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer,
 			NotAfter, NotBefore, SignatureAlg, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength,
 			ChainIssuers, ChainData, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11,
-			SupportsTLS12, Suites, SuiteCount, SuitesInOrder, ServerSignature, DebianFlawed, SessionResumption, 
+			SupportsTLS12, Suites, SuiteCount,  ServerSignature, DebianFlawed, SessionResumption, 
 			RenegSupport, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris, VulnBEAST, Compression, 
 			NpnSupport, NpnProtocols, SessionTickets, OcspStapling, SniRequired, HttpStatusCode, HttpForwarding, 
 			KeyStrength, Sims, ForwardSecrecy, Heartbeat, Heartbleed, Poodle, PoodleTls, Logjam, Freak, OpenSslCcs, 
@@ -178,10 +191,10 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			HpkpPolicy, HpkpRoPolicy, HasSct, chainPinSha256, chainSha1Hashes, Rc4Only, ChaCha20Preference, 
 			DrownVulnerable, MustStaple, OpenSSLLuckyMinus20, SecurityHeadersGrade, SecurityHeadersXFrameOptions, 
 			SecurityHeadersStrictTransportSecurity, SecurityHeadersXContentTypeOptions, SecurityHeadersXXSSProtection, 
-			SecurityHeadersContentSecurityPolicy, SecurityHeadersReferrerPolicy, ObservatoryRating, ObservatoryPassFail, ObservatoryIssues)
-			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+			SecurityHeadersContentSecurityPolicy, SecurityHeadersReferrerPolicy, ObservatoryRating, ObservatoryPassFail, ObservatoryIssues, ROBOT)
+			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)`, table)
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ? , ?)`, table)
 		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
 			sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
 		if err != nil {
@@ -206,7 +219,7 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 			db.Close()
 			return err
 		}
-		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, currentReport.Reachable, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(currentEndpoint.Details.Cert.CommonNames, ";"), strings.Join(currentEndpoint.Details.Cert.AltNames, ";"), len(currentEndpoint.Details.Cert.AltNames), prefixSupport, issuer, msUnixToTime(currentEndpoint.Details.Cert.NotAfter), msUnixToTime(currentEndpoint.Details.Cert.NotBefore), signatureAlg, keyAlg, keySize, currentEndpoint.Details.Cert.ValidationType, currentEndpoint.Details.Cert.Sgc, currentEndpoint.Details.Cert.RevocationInfo, len(currentEndpoint.Details.Chain.Certs), chainIssuers, chainData, currentEndpoint.Details.Cert.Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, len(currentEndpoint.Details.Suites.List), currentEndpoint.Details.Suites.Preference, currentEndpoint.Details.ServerSignature, currentEndpoint.Details.Key.DebianFlaw, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, currentEndpoint.Details.Chain.Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(currentEndpoint.Details.Cert.CrlURIs, " "), strings.Join(currentEndpoint.Details.Cert.OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, currentEndpoint.Details.Key.Strength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, currentEndpoint.Details.Cert.MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.HeaderScore.ContentSecurityPolicy, currentReport.HeaderScore.ReferrerPolicy, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions)
+		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, currentReport.Reachable, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(checkReturn(report.Cert, 0).CommonNames, ";"), strings.Join(checkReturn(report.Cert, 0).AltNames, ";"), len(checkReturn(report.Cert, 0).AltNames), prefixSupport, issuer, msUnixToTime(checkReturn(report.Cert, 0).NotAfter), msUnixToTime(checkReturn(report.Cert, 0).NotBefore), signatureAlg, keyAlg, keySize, checkReturn(report.Cert, 0).ValidationType, checkReturn(report.Cert, 0).Sgc, checkReturn(report.Cert, 0).RevocationInfo, len(report.Cert), chainIssuers, chainData, checkReturn(report.Cert, 0).Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, 0, currentEndpoint.Details.ServerSignature, checkReturn(report.Cert, 0).KeyKnownDebianInsecure, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, checkReturn(report.Cert, 0).Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(checkReturn(report.Cert, 0).CrlURIs, " "), strings.Join(checkReturn(report.Cert, 0).OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, checkReturn(report.Cert, 0).KeyStrength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTls, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, checkReturn(report.Cert, 0).MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.HeaderScore.ContentSecurityPolicy, currentReport.HeaderScore.ReferrerPolicy, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions, currentEndpoint.Details.Bleichenbacher)
 		if err != nil {
 			if logLevel >= LOG_ERROR {
 				logger.Printf("[ERROR] Error executing SQL-Transaction: %v", err)
@@ -224,6 +237,14 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 		db.Close()
 	}
 	return nil
+}
+func checkReturn(exists []LabsCert, index int) LabsCert {
+	if len(exists) == 0 {
+		var empty LabsCert
+		return empty
+	} else {
+		return exists[index]
+	}
 }
 
 // NewqlAssessment starts process of writing the event results in the database

@@ -94,26 +94,43 @@ type LabsKey struct {
 	Q          int
 }
 
+type LabsCaaRecord struct {
+	Tag   string
+	Value string
+	Flags int
+}
+
+type LabsCaaPolicy struct {
+	PolicyHostname string
+	CaaRecords     []LabsCaaRecord
+}
+
 type LabsCert struct {
-	Subject              string
-	CommonNames          []string
-	AltNames             []string
-	NotBefore            int64
-	NotAfter             int64
-	IssuerSubject        string
-	SigAlg               string
-	IssuerLabel          string
-	RevocationInfo       int
-	CrlURIs              []string
-	OcspURIs             []string
-	RevocationStatus     int
-	CrlRevocationStatus  int
-	OcspRevocationStatus int
-	Sgc                  int
-	ValidationType       string
-	Issues               int
-	Sct                  bool
-	MustStaple           int
+	Id                     int
+	Subject                string
+	CommonNames            []string
+	AltNames               []string
+	NotBefore              int64
+	NotAfter               int64
+	IssuerSubject          string
+	SigAlg                 string
+	RevocationInfo         int
+	CrlURIs                []string
+	OcspURIs               []string
+	DnsCaa                 bool
+	Caapolicy              LabsCaaPolicy
+	MustStaple             bool
+	Sgc                    int
+	ValidationType         string
+	Issues                 int
+	Sct                    bool
+	Sha1Hash               string
+	PinSha256              string
+	KeyAlg                 string
+	KeySize                int
+	KeyStrength            int
+	KeyKnownDebianInsecure bool
+	Raw                    string
 }
 
 type LabsChainCert struct {
@@ -131,8 +148,6 @@ type LabsChainCert struct {
 	RevocationStatus     int
 	CrlRevocationStatus  int
 	OcspRevocationStatus int
-	Sha1Hash             string
-	PinSha256            string
 	Raw                  string
 }
 
@@ -146,7 +161,6 @@ type LabsProtocol struct {
 	Name             string
 	Version          string
 	V2SuitesDisabled bool
-	ErrorMessage     bool
 	Q                int
 }
 
@@ -159,12 +173,28 @@ type LabsSimClient struct {
 }
 
 type LabsSimulation struct {
-	Client     LabsSimClient
-	ErrorCode  int
-	Attempts   int
-	ProtocolId int
-	SuiteId    int
-	KxInfo     string
+	Client         LabsSimClient
+	ErrorCode      int
+	ErrorMessage   string
+	Attempts       int
+	CertChainId    string
+	ProtocolId     int
+	SuiteId        int
+	SuiteName      string
+	KxType         string
+	KxStrength     int
+	DhBits         int
+	DhP            int
+	DhG            int
+	DhYs           int
+	NamedGroupBits int
+	NamedGroupId   int
+	NamedGroupName string
+	AlertType      int
+	AlertCode      int
+	KeyAlg         string
+	KeySize        int
+	SigAlg         string
 }
 
 type LabsSimDetails struct {
@@ -175,16 +205,20 @@ type LabsSuite struct {
 	Id             int
 	Name           string
 	CipherStrength int
-	DhStrength     int
+	KxType         string
+	KxStrength     int
+	DhBits         int
 	DhP            int
 	DhG            int
 	DhYs           int
-	EcdhBits       int
-	EcdhStrength   int
+	NamedGroupBits int
+	NamedGroupId   int
+	NamedGroudName string
 	Q              int
 }
 
 type LabsSuites struct {
+	Protocol   int
 	List       []LabsSuite
 	Preference bool
 }
@@ -197,17 +231,12 @@ type LabsHstsPolicy struct {
 	MaxAge            int64
 	IncludeSubDomains bool
 	Preload           bool
-	Directives        Directives
-}
-
-type Directives struct {
-	MaxAge            string `json:"max-age"`
-	Includesubdomains string
-	Preload           string
+	Directives        map[string]string
 }
 
 type LabsHstsPreload struct {
 	Source     string
+	HostName   string
 	Status     string
 	Error      string
 	SourceTime int64
@@ -244,13 +273,62 @@ type DrownHost struct {
 	Status  string
 }
 
+type LabsCertChain struct {
+	Id        string
+	CertIds   []string
+	Trustpath []LabsTrustPath
+	Issues    int
+	NoSni     bool
+}
+
+type LabsTrustPath struct {
+	CertIds       []string
+	Trust         []LabsTrust
+	IsPinned      bool
+	MatchedPins   int
+	UnMatchedPins int
+}
+
+type LabsTrust struct {
+	RootStore         string
+	IsTrusted         bool
+	TrustErrorMessage string
+}
+
+type LabsNamedGroups struct {
+	List       []LabsNamedGroup
+	Preference bool
+}
+
+type LabsNamedGroup struct {
+	Id   int
+	Name string
+	Bits int
+}
+
+type LabsHttpTransaction struct {
+	RequestUrl        string
+	StatusCode        int
+	RequestLine       string
+	RequestHeaders    []string
+	ResponseLine      string
+	ResponseRawHeader []string
+	ResponseHeader    []LabsHttpHeader
+	FragileServer     bool
+}
+
+type LabsHttpHeader struct {
+	Name  string
+	Value string
+}
+
 type LabsEndpointDetails struct {
 	HostStartTime                  int64
-	Key                            LabsKey
-	Cert                           LabsCert
-	Chain                          LabsChain
+	CertChains                     []LabsCertChain
 	Protocols                      []LabsProtocol
-	Suites                         LabsSuites
+	Suites                         []LabsSuites
+	NoSniSuites                    LabsSuites
+	NamedGroups                    LabsNamedGroups
 	ServerSignature                string
 	PrefixDelegation               bool
 	NonPrefixDelegation            bool
@@ -260,22 +338,28 @@ type LabsEndpointDetails struct {
 	CompressionMethods             int
 	SupportsNpn                    bool
 	NpnProtocols                   string
+	SupportsAlpn                   bool
+	AlpnProtocols                  string
 	SessionTickets                 int
 	OcspStapling                   bool
 	StaplingRevocationStatus       int
 	StaplingRevocationErrorMessage string
 	SniRequired                    bool
-	HttpStatusCode                 int
-	HttpForwarding                 string
-	ForwardSecrecy                 int
 	SupportsRc4                    bool
 	Rc4WithModern                  bool
 	Rc4Only                        bool
+	HttpStatusCode                 int
+	HttpForwarding                 string
+	ForwardSecrecy                 int
+	ProtocolIntolerance            int
+	MiscIntolerance                int
 	Sims                           LabsSimDetails
 	Heartbleed                     bool
 	Heartbeat                      bool
 	OpenSslCcs                     int
 	OpenSSLLuckyMinus20            int
+	Ticketbleed                    int
+	Bleichenbacher                 int
 	Poodle                         bool
 	PoodleTls                      int
 	FallbackScsv                   bool
@@ -284,6 +368,7 @@ type LabsEndpointDetails struct {
 	DhPrimes                       []string
 	DhUsesKnownPrimes              int
 	DhYsReuse                      bool
+	EcdhParameterReuse             bool
 	Logjam                         bool
 	ChaCha20Preference             bool
 	HstsPolicy                     LabsHstsPolicy
@@ -302,6 +387,7 @@ type LabsEndpoint struct {
 	StatusDetailsMessage string
 	Grade                string
 	GradeTrustIgnored    string
+	FutureGrade          string
 	HasWarnings          bool
 	IsExceptional        bool
 	Progress             int
@@ -335,6 +421,7 @@ type LabsReport struct {
 	HeaderScore Securityheaders
 	// ObservatoryScan holds the analyzed results from observatory
 	ObservatoryScan ObservatoryAnalyzeResult
+	Cert            []LabsCert
 	// ObservatoryResults holds the raw results
 	ObservatoryResults ObservatoryScanResults
 }
