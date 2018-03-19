@@ -16,7 +16,7 @@ import (
 )
 
 // USER_AGENT tells the api which version is used
-var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id: 84740581ac9cc25312f1db3f80b94bb6a765d888 $)"
+var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id$)"
 
 // labsTries is the maximum number of scan retries
 var labsTries = 2
@@ -35,6 +35,9 @@ var globalNewAssessmentCoolOff int64 = 1100
 
 // requestCounter is the total number of requests send
 var requestCounter uint64 = 0
+
+// relative Auslastung von maxAssessments
+var faktor = 1.0
 
 var apiLocation = "https://api.ssllabs.com/api/v3"
 
@@ -261,7 +264,6 @@ func invokeAnalyze(host string, startNew bool, fromCache bool, logger *log.Logge
 
 		// Add the JSON body to the response
 		analyzeResponse.rawJSON = string(body)
-
 		return &analyzeResponse, nil
 	}
 }
@@ -441,7 +443,6 @@ func (manager *Manager) labsRun() {
 
 					manager.logger.Println(msg)
 				}
-
 				activeLabsAssessments--
 
 				// We have a finished assessment now that we can add third-party information to
@@ -460,14 +461,17 @@ func (manager *Manager) labsRun() {
 			break
 		// if someone asked if there are still active assessments
 		case <-manager.CloseChannel:
-			manager.logger.Println("[DEBUG] Close Question received!")
+			if logLevel >= LOG_DEBUG {
+				manager.logger.Println("[DEBUG] Close Question received!")
+			}
+
 			manager.CloseChannel <- (activeLabsAssessments == 0)
 
 		// Once a second, start a new assessment, provided there are
 		// hostnames left and we're not over the concurrent assessment limit.
 		case <-coolOff.C:
 
-			if currentLabsAssessments < maxLabsAssessments {
+			if currentLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 || activeLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 {
 				select {
 				case e := <-manager.InputEventChannel:
 					e.tries = 0
@@ -476,7 +480,10 @@ func (manager *Manager) labsRun() {
 					}
 					manager.startLabsAssessment(e)
 				case <-time.After(time.Millisecond * 100):
-					manager.logger.Printf("[DEBUG] No new event received, currently %v active assessments", activeLabsAssessments)
+					if logLevel >= LOG_DEBUG {
+						manager.logger.Printf("[DEBUG] No new event received, currently %v active assessments", activeLabsAssessments)
+					}
+
 					break
 				}
 			}

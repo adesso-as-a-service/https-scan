@@ -106,7 +106,7 @@ type LabsCaaPolicy struct {
 }
 
 type LabsCert struct {
-	Id                     int
+	Id                     string
 	Subject                string
 	CommonNames            []string
 	AltNames               []string
@@ -117,6 +117,9 @@ type LabsCert struct {
 	RevocationInfo         int
 	CrlURIs                []string
 	OcspURIs               []string
+	RevocationStatus       int
+	CrlRevocationStatus    int
+	OcspRevocationStatus   int
 	DnsCaa                 bool
 	Caapolicy              LabsCaaPolicy
 	MustStaple             bool
@@ -264,7 +267,7 @@ type LabsHpkpPolicy struct {
 	Directives        []LabsHpkpDirective
 }
 
-type DrownHost struct {
+type LabsDrownHost struct {
 	Ip      string
 	Export  bool
 	Port    int
@@ -345,11 +348,11 @@ type LabsEndpointDetails struct {
 	StaplingRevocationStatus       int
 	StaplingRevocationErrorMessage string
 	SniRequired                    bool
+	HttpStatusCode                 int
+	HttpForwarding                 string
 	SupportsRc4                    bool
 	Rc4WithModern                  bool
 	Rc4Only                        bool
-	HttpStatusCode                 int
-	HttpForwarding                 string
 	ForwardSecrecy                 int
 	ProtocolIntolerance            int
 	MiscIntolerance                int
@@ -361,7 +364,7 @@ type LabsEndpointDetails struct {
 	Ticketbleed                    int
 	Bleichenbacher                 int
 	Poodle                         bool
-	PoodleTls                      int
+	PoodleTLS                      int
 	FallbackScsv                   bool
 	Freak                          bool
 	HasSct                         int
@@ -375,7 +378,8 @@ type LabsEndpointDetails struct {
 	HstsPreloads                   []LabsHstsPreload
 	HpkpPolicy                     LabsHpkpPolicy
 	HpkpRoPolicy                   LabsHpkpPolicy
-	DrownHosts                     []DrownHost
+	HttpTransactions               []LabsHttpTransaction
+	DrownHosts                     []LabsDrownHost
 	DrownErrors                    bool
 	DrownVulnerable                bool
 }
@@ -416,12 +420,13 @@ type LabsReport struct {
 	CacheExpiryTime int64
 	Endpoints       []LabsEndpoint
 	CertHostnames   []string
+	Cert            []LabsCert `json:"certs"`
 	rawJSON         string
+
 	// HeaderScore holds the results from securityheaders.io
 	HeaderScore Securityheaders
 	// ObservatoryScan holds the analyzed results from observatory
 	ObservatoryScan ObservatoryAnalyzeResult
-	Cert            []LabsCert
 	// ObservatoryResults holds the raw results
 	ObservatoryResults ObservatoryScanResults
 }
@@ -652,17 +657,23 @@ func checkCloseManager(manager Manager) bool {
 		case b := <-manager.CloseChannel:
 			if !b {
 				// manager still working: false
-				log.Println("[DEBUG] Manager send 'not finished yet'")
+				if logLevel >= LOG_DEBUG {
+					log.Println("[DEBUG] Manager send 'not finished yet'")
+				}
 				return false
 			}
 			// no answer: false
 		case <-time.After(time.Millisecond * 500):
-			log.Println("[DEBUG] No Answer received over Close Channel")
+			if logLevel >= LOG_DEBUG {
+				log.Println("[DEBUG] No Answer received over Close Channel")
+			}
 			return false
 		}
 	// not reached: false
 	case <-time.After(time.Millisecond * 500):
-		log.Println("[DEBUG] Message couldn't be send over Close Channel")
+		if logLevel >= LOG_DEBUG {
+			log.Println("[DEBUG] Message couldn't be send over Close Channel")
+		}
 		return false
 	}
 	// No more active assessments for manager
@@ -679,11 +690,16 @@ func (manager *MasterManager) checkClose(errH *ErrorHandler) bool {
 			return true
 		}
 		if !checkCloseManager(id) {
-			manager.logger.Printf("[DEBUG] Manager with id %s is not finished yet", id.internalEventChannel)
+			if logLevel >= LOG_DEBUG {
+				manager.logger.Printf("[DEBUG] Manager with id %s is not finished yet", id.internalEventChannel)
+			}
 			return false
 		}
 		if !checkCloseErr(errH) {
-			manager.logger.Println("[DEBUG] Error Handler still has Errors to handle")
+			if logLevel >= LOG_DEBUG {
+				manager.logger.Println("[DEBUG] Error Handler still has Errors to handle")
+			}
+
 			return false
 		}
 	}
@@ -1055,6 +1071,7 @@ func main() {
 	var conf_labsTries = flag.Int("labs-retries", 0, "Number of retries if the sslLabs-Scan fails")
 	var conf_obsTries = flag.Int("obs-retries", 1, "Number of retries if the Observatory-Scan fails")
 	var conf_secHTries = flag.Int("secH-retries", 2, "Number of retries if the Securityheader-Scan fails")
+	var conf_maxAssessments = flag.Float64("maxFactor", 1.0, "Relative Auslastung von MaxAssessments")
 
 	flag.Parse()
 
@@ -1079,6 +1096,12 @@ func main() {
 
 	if secHTries < 1 {
 		secHTries = 1
+	}
+
+	if *conf_maxAssessments > 1.0 {
+		faktor = 1.0
+	} else {
+		faktor = *conf_maxAssessments
 	}
 
 	globalSQLRetries = *conf_sql_retries
