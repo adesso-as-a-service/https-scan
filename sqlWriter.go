@@ -86,6 +86,12 @@ func writeToDb(report *LabsReport, logger *log.Logger) error {
 		chainSha1Hashes += currentChainCert.Sha1Hash + "|"
 		chainPinSha256 += currentChainCert.PinSha256 + "|"
 	}
+	if len(signatureAlg) > 64 {
+		signatureAlg = signatureAlg[0:63]
+	}
+	if len(keyAlg) > 64 {
+		keyAlg = keyAlg[0:63]
+	}
 
 	for k := range currentReport.Endpoints {
 		currentEndpoint := currentReport.Endpoints[k]
@@ -292,10 +298,11 @@ func (manager *Manager) sqlRun() {
 					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
 				}
 				activeSqlAssessments--
-				e.eventType = ERROR
+				e.eventType = FATAL
 				if logLevel >= LOG_ERROR {
 					manager.logger.Printf("[ERROR] sqlWrite for %v ultimately failed", e.host)
 				}
+				e.senderID = "sql"
 				manager.ControlEventChannel <- e
 			}
 
@@ -316,7 +323,7 @@ func (manager *Manager) sqlRun() {
 				// And we won't re-query these third partys by relying on the ssllabs-scan polling
 
 				e.eventType = FINISHED
-				e.senderID = "sql"
+
 				manager.OutputEventChannel <- e
 
 				if logLevel >= LOG_INFO {

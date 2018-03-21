@@ -61,6 +61,8 @@ var globalInsecure = false
 // logFile references the log-File, which is used to store the log of the current run
 var logFile *os.File
 
+var continueFile *os.File
+
 // chain contains all ids of the implemented managers. The order in this string is the order
 // in which the hosts pass the managers
 var chain = []string{"ssl", "labs", "obs", "secH", "sql"}
@@ -600,11 +602,13 @@ type MasterManager struct {
 	managerList []Manager
 	// logger specifies the logger in the control context
 	logger *log.Logger
+
+	conFile *os.File
 }
 
 // NewMasterManager creates and starts a control manager that starts a analysis chain useing the steps
 // defined by useing and analyses the host in hostProvider
-func NewMasterManager(hostProvider *hostProvider, useing map[string]bool) *MasterManager {
+func NewMasterManager(hostProvider *hostProvider, useing map[string]bool, confFile *os.File) *MasterManager {
 	manager := MasterManager{
 		hostProvider:        hostProvider,
 		ControlEventChannel: make(chan Event),
@@ -615,6 +619,7 @@ func NewMasterManager(hostProvider *hostProvider, useing map[string]bool) *Maste
 		results:             &LabsResults{reports: make([]LabsReport, 0)},
 		managerList:         make([]Manager, len(chain)),
 		logger:              log.New(io.MultiWriter(os.Stdout, logFile), "Control: ", log.Ldate|log.Ltime),
+		conFile:             confFile,
 	}
 
 	go manager.run()
@@ -644,6 +649,9 @@ func (manager *MasterManager) buildChain() {
 func (manager *MasterManager) handleResult(e Event) {
 	manager.results.reports = append(manager.results.reports, *e.report)
 	manager.results.responses = append(manager.results.responses, e.report.rawJSON)
+	manager.conFile.WriteString(e.host)
+	manager.conFile.WriteString("\n")
+	manager.conFile.Sync()
 }
 
 // checkCloseManager tests if there are events handled by the given manager at
@@ -810,20 +818,20 @@ func (manager *MasterManager) run() {
 				switch cE.eventType {
 				case ERROR:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
+						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", cE.host, cE.tries, cE.senderID)
 					}
 					cE.eventType = FINISHED
 					errorChan <- cE
 				case REERROR:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
+						manager.logger.Printf("[INFO]  %v will be retried in %v", cE.host, cE.senderID)
 					}
 					errorChan <- cE
 				case FATAL:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", e.host, e.senderID)
+						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", cE.host, cE.senderID)
 					}
-					if manager.useing["sql"] {
+					if manager.useing["sql"] && cE.senderID != "sql" {
 						if logLevel >= LOG_DEBUG {
 							manager.logger.Println("[DEBUG] Sending Fatal Error to ErrorHandler")
 						}
@@ -839,11 +847,12 @@ func (manager *MasterManager) run() {
 			case iE := <-manager.InputEventChannel:
 				// Handle incoming results
 				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Results for %v received", e.host)
+					manager.logger.Printf("[INFO] Results for %v received", iE.host)
 				}
+
 				manager.handleResult(iE)
 				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Results for %v have been handled", e.host)
+					manager.logger.Printf("[DEBUG] Results for %v have been handled", iE.host)
 				}
 				break
 			}
@@ -855,20 +864,20 @@ func (manager *MasterManager) run() {
 				switch cE.eventType {
 				case ERROR:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", e.host, e.tries, e.senderID)
+						manager.logger.Printf("[INFO] Assessment failed for %v, for the %v. time in %v", cE.host, cE.tries, cE.senderID)
 					}
 					cE.eventType = FINISHED
 					errorChan <- cE
 				case REERROR:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO]  %v will be retried in %v", e.host, e.senderID)
+						manager.logger.Printf("[INFO]  %v will be retried in %v", cE.host, cE.senderID)
 					}
 					errorChan <- cE
 				case FATAL:
 					if logLevel >= LOG_INFO {
-						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", e.host, e.senderID)
+						manager.logger.Printf("[INFO] Fatal Error received for %v from %v", cE.host, cE.senderID)
 					}
-					if manager.useing["sql"] {
+					if manager.useing["sql"] && cE.senderID != "sql" {
 						if logLevel >= LOG_DEBUG {
 							manager.logger.Println("[DEBUG] Sending Fatal Error to ErrorHandler")
 						}
@@ -885,11 +894,10 @@ func (manager *MasterManager) run() {
 			case iE := <-manager.InputEventChannel:
 				// Handle incoming results
 				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Results for %v received", e.host)
+					manager.logger.Printf("[INFO] Results for %v received", iE.host)
 				}
-				manager.handleResult(iE)
 				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] Results for %v have been handled", e.host)
+					manager.logger.Printf("[DEBUG] Results for %v have been handled", iE.host)
 				}
 				break
 			case <-time.After(time.Millisecond * 2000):
@@ -1023,6 +1031,22 @@ func readLines(path *string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+func cleanList(list []string, delete []string) []string {
+	topDelete := 0
+	var res []string
+	sort.Strings(list)
+	sort.Strings(delete)
+	for i := 0; i < len(list); i++ {
+		if topDelete < len(delete) && list[i] == delete[topDelete] {
+			topDelete++
+		} else {
+			res = append(res, list[i])
+		}
+	}
+
+	return res
+}
+
 func validateURL(URL string) bool {
 	_, err := url.Parse(URL)
 	if err != nil {
@@ -1072,6 +1096,7 @@ func main() {
 	var conf_obsTries = flag.Int("obs-retries", 1, "Number of retries if the Observatory-Scan fails")
 	var conf_secHTries = flag.Int("secH-retries", 2, "Number of retries if the Securityheader-Scan fails")
 	var conf_maxAssessments = flag.Float64("maxFactor", 1.0, "Relative Auslastung von MaxAssessments")
+	var conf_continue = flag.Bool("continue", false, "continue Scan after error")
 
 	flag.Parse()
 
@@ -1153,10 +1178,34 @@ func main() {
 		if err != nil {
 			log.Fatalf("[ERROR] Reading from specified hostfile failed: %v", err)
 		}
+		if *conf_continue {
+			cFName := "finished"
+			finishedHostnames, err := readLines(&cFName)
+			if err != nil {
+				log.Fatalf("[ERROR] Reading from specified hostfile failed: %v", err)
+			}
+			hostnames = cleanList(hostnames, finishedHostnames)
+		}
 
 	} else {
 		// Read hostnames from the rest of the args
 		hostnames = flag.Args()
+	}
+	var err error
+	if *conf_continue {
+		continueFile, err = os.OpenFile("finished", os.O_APPEND|os.O_WRONLY, 0644)
+
+		if err != nil {
+			log.Fatalf("[FATAL] Could not create continue File %v: %v", "finished", err.Error())
+		}
+		defer continueFile.Close()
+	} else {
+		os.Remove("finished")
+		continueFile, err = os.OpenFile("finished", os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			log.Fatalf("[FATAL] Could not create continue File %v: %v", "finished", err.Error())
+		}
+		defer continueFile.Close()
 	}
 
 	if *conf_hostcheck {
@@ -1181,7 +1230,7 @@ func main() {
 	var useing = map[string]bool{"labs": !*conf_ssllabs, "obs": !*conf_observatory, "secH": !*conf_securityheaders, "sql": !*conf_sql, "ssl": !*conf_ssltest}
 
 	// create files and directories for logging output and results
-	err := os.Mkdir("log", 0700)
+	err = os.Mkdir("log", 0700)
 	if err != nil && os.IsNotExist(err) {
 		log.Fatalf("[FATAL] Could not create loggingFolder log: %v", err.Error())
 	}
@@ -1212,7 +1261,8 @@ func main() {
 	hp := newHostProvider(hostnames)
 
 	// start analysis by starting control
-	manager := NewMasterManager(hp, useing)
+
+	manager := NewMasterManager(hp, useing, continueFile)
 
 	// Respond to events until all the work is done.
 	for {
