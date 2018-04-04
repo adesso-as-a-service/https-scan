@@ -471,7 +471,7 @@ func (manager *Manager) labsRun() {
 		// hostnames left and we're not over the concurrent assessment limit.
 		case <-coolOff.C:
 
-			if currentLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 || activeLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 {
+			if currentLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 && activeLabsAssessments < int(faktor*float64(maxLabsAssessments))+1 {
 				select {
 				case e := <-manager.InputEventChannel:
 					e.tries = 0

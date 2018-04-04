@@ -7,3 +7,6 @@ sql_config.json
 *.exe
 domain*
 test.txt
+crawler.go
+certScan.go
+ssllabs-scanComp.go
