@@ -257,7 +257,7 @@ func getDomains() ([]DomainsRow, error) {
 	var results []DomainsRow
 	var help DomainsRow
 	rows, err := globalDatabase.Query(
-		"Select DomainID, DomainName " +
+		"SELECT DomainID, DomainName " +
 			"FROM Domains")
 	if err != nil {
 		return nil, err
