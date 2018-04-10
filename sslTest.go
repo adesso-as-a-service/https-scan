@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -185,4 +186,53 @@ func (manager *Manager) sslRun() {
 			break
 		}
 	}
+}
+
+// Tests if a URL is reachable over HTTPS oder HTTP
+// 0 unreachable
+// 1 http
+// 2 https
+// 3 http + https
+func testHost(host string) uint8 {
+	res := 0
+	if testHTTPS(host) {
+		res += 2
+	}
+	if testHTTP(host) {
+		res += 1
+	}
+	return res
+}
+
+func testHTTPS(host string) bool {
+	hostName := host
+	portNum := "443"
+	seconds := 1
+	timeOut := time.Duration(seconds) * time.Second
+	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
+	if err != nil {
+		//ADD Logging
+		fmt.Println(err)
+		return false
+	}
+	return true
+}
+
+func testHTTP(host string) bool {
+	hostName := host
+	portNum := "80"
+	seconds := 1
+	timeOut := time.Duration(seconds) * time.Second
+	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
+	if err != nil {
+		//AddLogging
+		fmt.Println(err)
+		return false
+	}
+	return true
+}
+
+func main() {
+	url := "aktienexpress.com"
+	fmt.Println(testHost(url))
 }

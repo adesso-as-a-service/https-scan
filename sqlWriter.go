@@ -4,354 +4,222 @@ import _ "github.com/denisenkom/go-mssqldb"
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"strings"
-	"time"
+
+	"github.com/fatih/structs"
 )
 
-// globalObservatory signals sqlWriter if observatory-scan is used
-var globalObservatory bool
+var globalDatabase *sql.DB
 
-// globalSQLRetries is the number of retries used for sql
-var globalSQLRetries = -1
+// maximum number of inserts in one SQLStatement
+var maxSQLInserts = 300
 
-// activeSqlAssessments is the number of active assessments according to the manager
-var activeSqlAssessments = 0
+// Datatypes
 
-// maxSqlAssessments is the maximal number of active assessments
-var maxSqlAssessments = 5
-
-// SqlConfiguration contains the data needed to connect to the sql-server
-type SqlConfiguration struct {
-	SqlServer     string
-	SqlUserId     string
-	SqlPassword   string
-	SqlDatabase   string
-	SqlEncryption string
-	SqlTable      string
+// DomainsReachable is the base type for receiving the domains which should be scanned
+type DomainsReachable struct {
+	DomainID        int
+	DomainName      string
+	DomainReachable uint8
+	TestWithSSL     bool
 }
 
-func msUnixToTime(ms int64) time.Time {
-	return time.Unix(0, ms*int64(time.Millisecond))
+// openDatabase opens the database used for accessing domains and saving results
+func openDatabase(conf SQLConfiguration) error {
+	globalDatabase, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
+		conf.SQLServer, conf.SQLUserID, conf.SQLPassword, conf.SQLDatabase, conf.SQLEncryption))
+	return err
 }
 
-// readSqlConfig extracts the information out of the "sql_config.json" file
-func readSqlConfig(file string, logger *log.Logger) SqlConfiguration {
-	configFile, err := os.Open("sql_config.json")
+// getScans returns all Domains and their Reachability and how they should be tested. They are
+// selected by the specified "scanID" and the "ScanStatus"
+func getScans(table string, scanID int, scanStatus uint8) []DomainsReachable {
+	var result []DomainsReachable
+	var help DomainsReachable
+	rows, err := globalDatabase.Query(fmt.Sprintf(
+		"Select Domains.DomainID, Domains.DomainName, %[1]s.DomainReachable, %[1]s.TestWithSSL "+
+			"FROM Domains, %[1]s "+
+			"WHERE %[1]s.ScanStatus = ? "+
+			"   AND %[1]s.ScanID = ? "+
+			"   AND %[1]s.DomainID = Domains.DomainID", table), scanStatus, scanID)
 	if err != nil {
-		logger.Fatalf("[ERROR] Opening specified sql_config failed: %v", err)
+		// Better Error Handling needed
+		log.Fatal(err)
 	}
-	decoder := json.NewDecoder(configFile)
-	configuration := SqlConfiguration{}
-	decoderErr := decoder.Decode(&configuration)
-	if decoderErr != nil {
-		logger.Fatalf("[ERROR] Decoding sql_config failed: %v", err)
+	for rows.Next() {
+		if err := rows.Scan(&help.DomainID, &help.DomainName, &help.DomainReachable, &help.TestWithSSL); err != nil {
+			log.Fatal(err)
+		}
+		result = append(result, help)
 	}
-	configFile.Close()
-	return configuration
+	if err := rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+	return result
 }
 
-// writeToDb writes a report to the specified database.
-// The write is hard coded and needs to be changed, when adding new columns
-// or when the form of data changes.
-func writeToDb(report *LabsReport, logger *log.Logger) error {
-	// Insert Infos into Database
-	currentReport := report
-	// Go through the endpoints and add information from within to variables that can be used
-	// When building the SQL-Query
-	var chainIssuers string
-	var subject string
-	var issuer string
-	var signatureAlg string
-	var keyAlg string
-	var keySize int
-	var chainSize int
-	var chainData string
-	var chainSha1Hashes string
-	var chainPinSha256 string
-	for m := range report.Cert {
-		currentChainCert := report.Cert[m]
-		chainIssuers += currentChainCert.IssuerSubject + "|"
-		subject += currentChainCert.Subject + "|"
-		issuer += currentChainCert.IssuerSubject + "|"
-		signatureAlg += currentChainCert.SigAlg + "|"
-		keyAlg += currentChainCert.KeyAlg + "|"
-		keySize = currentChainCert.KeySize
-		chainSize += len(currentChainCert.Raw)
-		chainData += currentChainCert.Raw + "\n"
-		chainSha1Hashes += currentChainCert.Sha1Hash + "|"
-		chainPinSha256 += currentChainCert.PinSha256 + "|"
-	}
-	if len(signatureAlg) > 64 {
-		signatureAlg = signatureAlg[0:63]
-	}
-	if len(keyAlg) > 64 {
-		keyAlg = keyAlg[0:63]
-	}
-
-	for k := range currentReport.Endpoints {
-		currentEndpoint := currentReport.Endpoints[k]
-
-		prefixSupport := false
-		if currentEndpoint.Details.PrefixDelegation == true && currentEndpoint.Details.NonPrefixDelegation == true {
-			prefixSupport = true
-		}
-
-		var protocolString string
-		for m := range currentEndpoint.Details.Protocols {
-			currentProtocol := currentEndpoint.Details.Protocols[m]
-			protocolString += currentProtocol.Name + currentProtocol.Version
-		}
-
-		supportsSSL20 := false
-		supportsSSL30 := false
-		supportsTLS10 := false
-		supportsTLS11 := false
-		supportsTLS12 := false
-		if strings.Contains(protocolString, "SSL2.0") {
-			supportsSSL20 = true
-		}
-		if strings.Contains(protocolString, "SSL3.0") {
-			supportsSSL30 = true
-		}
-		if strings.Contains(protocolString, "TLS1.0") {
-			supportsTLS10 = true
-		}
-		if strings.Contains(protocolString, "TLS1.1") {
-			supportsTLS11 = true
-		}
-		if strings.Contains(protocolString, "TLS1.2") {
-			supportsTLS12 = true
-		}
-
-		var suites string
-		for n := range currentEndpoint.Details.Suites {
-			suites += "{"
-			switch currentEndpoint.Details.Suites[n].Protocol {
-			case 2:
-				suites += "SSL2: "
-			case 768:
-				suites += "SSL3: "
-			case 769:
-				suites += "TLS1.0: "
-			case 770:
-				suites += "TLS1.1: "
-			case 771:
-				suites += "TLS1.2: "
-			case 772:
-				suites += "TLS1.3: "
-			}
-			for m := range currentEndpoint.Details.Suites[n].List {
-				currentSuite := currentEndpoint.Details.Suites[n].List[m]
-				suites += currentSuite.Name + fmt.Sprintf(" (cStr: %v ", currentSuite.CipherStrength)
-				suites += fmt.Sprintf("kxStr: %v ", currentSuite.KxStrength)
-				suites += ")"
-			}
-			suites += "}"
-		}
-
-		var sims string
-		for m := range currentEndpoint.Details.Sims.Results {
-			currentSim := currentEndpoint.Details.Sims.Results[m]
-			sims += fmt.Sprintf("%v (%v %v %v %v);", currentSim.Client.Id, currentSim.ErrorCode, currentSim.Attempts, currentSim.ProtocolId, currentSim.SuiteId)
-		}
-
-		var hstsPreloads string
-		for m := range currentEndpoint.Details.HstsPreloads {
-			currentPreload := currentEndpoint.Details.HstsPreloads[m]
-			hstsPreloads += fmt.Sprintf("%v:%v;", currentPreload.Source, currentPreload.Status)
-		}
-
-		// Encase in string() when used
-		hpkpPolicy, err := json.Marshal(currentEndpoint.Details.HpkpPolicy)
-		hpkpRoPolicy, err := json.Marshal(currentEndpoint.Details.HpkpRoPolicy)
-
-		var hstsPolicyDirectives string
-		hstsPolicyDirectives += fmt.Sprintf("max-age : \"%v\" ;", currentEndpoint.Details.HstsPolicy.MaxAge)
-		hstsPolicyDirectives += fmt.Sprintf("includesubdomains : \"%v\" ;", currentEndpoint.Details.HstsPolicy.IncludeSubDomains)
-		hstsPolicyDirectives += fmt.Sprintf("preload : \"%v\" ;", currentEndpoint.Details.HstsPolicy.Preload)
-
-		var observatoryPassFail string
-		var observatoryDescriptions string
-		if globalObservatory {
-			observatoryPassFail = strconv.Itoa(currentReport.ObservatoryScan.TestsPassed) + "/" + strconv.Itoa(currentReport.ObservatoryScan.TestsFailed)
-			observatoryDescriptions = currentReport.ObservatoryResults.ToIssueString()
-		}
-
-		sqlConfiguration := readSqlConfig("sql_config.json", logger)
-		var table string = sqlConfiguration.SqlTable
-		query := fmt.Sprintf(`Insert into %v (DomainName, DomainDepth, IpAddress, Port, Reachable, CheckTime, Grade, HasWarnings,
-			IsExceptional, RequestDuration, CertSubject, CommonName, AltNames, AltNameCount, PrefixSupport, Issuer,
-			NotAfter, NotBefore, SignatureAlg, KeyAlg, KeySize, ValidationType, IsSgc, RevocationInfo, ChainLength,
-			ChainIssuers, ChainData, IsTrusted, SupportsSSL20, SupportsSSL30, SupportsTLS10, SupportsTLS11,
-			SupportsTLS12, Suites, SuiteCount,  ServerSignature, DebianFlawed, SessionResumption, 
-			RenegSupport, ChainIssues, EngineVersion, CriteriaVersion, CrlUris, OcspUris, VulnBEAST, Compression, 
-			NpnSupport, NpnProtocols, SessionTickets, OcspStapling, SniRequired, HttpStatusCode, HttpForwarding, 
-			KeyStrength, Sims, ForwardSecrecy, Heartbeat, Heartbleed, Poodle, PoodleTls, Logjam, Freak, OpenSslCcs, 
-			DhYsReuse, DhPrimeCount, DhPrimeList, SupportsRc4, Rc4WithModern, DhUsesKnownPrimes, HstsPolicyMaxAge, 
-			HstsPolicyHeader, HstsPolicyStatus, HstsPolicyIncludeSubdomains, HstsPolicyPreload, HstsPolicyDirectives, 
-			HpkpPolicy, HpkpRoPolicy, HasSct, chainPinSha256, chainSha1Hashes, Rc4Only, ChaCha20Preference, 
-			DrownVulnerable, MustStaple, OpenSSLLuckyMinus20, SecurityHeadersGrade, SecurityHeadersXFrameOptions, 
-			SecurityHeadersStrictTransportSecurity, SecurityHeadersXContentTypeOptions, SecurityHeadersXXSSProtection, 
-			SecurityHeadersContentSecurityPolicy, SecurityHeadersReferrerPolicy, ObservatoryRating, ObservatoryPassFail, ObservatoryIssues, ROBOT, FutureGrade, GradeTrustIgnored)
-			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ? , ?, ?, ?)`, table)
-		db, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
-			sqlConfiguration.SqlServer, sqlConfiguration.SqlUserId, sqlConfiguration.SqlPassword, sqlConfiguration.SqlDatabase, sqlConfiguration.SqlEncryption))
+// prepareScan modifies the pending scans according to the "scanType". Entries are duplicated with diffrent "TestWithSSL"-Values, if
+// both Protocols are supported and wanted. If the wanted Protocol is not supported, they are marked with SCAN_STATUS IGNORED.
+func prepareScanData(table string, scanID int, scanType int) error {
+	switch scanType {
+	case scanOnlySSL:
+		err := updateTestWithSSL(table, scanID, reachableSSL, uint8(1))
 		if err != nil {
-			if logLevel >= LOG_ERROR {
-				logger.Printf("[ERROR] Connecting to SQL-Server: %v", err)
-			}
-			db.Close()
-			return err
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableSSL)
 		}
-		if err := db.Ping(); err != nil {
-			if logLevel >= LOG_ERROR {
-				logger.Printf("[ERROR] Can't ping SQL-Server: %v", err)
-			}
-			db.Close()
-			return err
-		}
-		tx, err := db.Begin()
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(1))
 		if err != nil {
-			if logLevel >= LOG_ERROR {
-				logger.Printf("[ERROR] Can't begin SQL-Transaction: %v", err)
-			}
-			db.Close()
-			return err
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
-		result, err := db.Exec(query, currentReport.Host, len(currentReport.Endpoints), currentEndpoint.IpAddress, currentReport.Port, currentReport.Reachable, msUnixToTime(currentReport.TestTime), currentEndpoint.Grade, currentEndpoint.HasWarnings, currentEndpoint.IsExceptional, currentEndpoint.Duration, subject, strings.Join(checkReturn(report.Cert, 0).CommonNames, ";"), strings.Join(checkReturn(report.Cert, 0).AltNames, ";"), len(checkReturn(report.Cert, 0).AltNames), prefixSupport, issuer, msUnixToTime(checkReturn(report.Cert, 0).NotAfter), msUnixToTime(checkReturn(report.Cert, 0).NotBefore), signatureAlg, keyAlg, keySize, checkReturn(report.Cert, 0).ValidationType, checkReturn(report.Cert, 0).Sgc, checkReturn(report.Cert, 0).RevocationInfo, len(report.Cert), chainIssuers, chainData, checkReturn(report.Cert, 0).Issues, supportsSSL20, supportsSSL30, supportsTLS10, supportsTLS11, supportsTLS12, suites, 0, currentEndpoint.Details.ServerSignature, checkReturn(report.Cert, 0).KeyKnownDebianInsecure, currentEndpoint.Details.SessionResumption, currentEndpoint.Details.RenegSupport, checkReturn(report.Cert, 0).Issues, currentReport.EngineVersion, currentReport.CriteriaVersion, strings.Join(checkReturn(report.Cert, 0).CrlURIs, " "), strings.Join(checkReturn(report.Cert, 0).OcspURIs, " "), currentEndpoint.Details.VulnBeast, currentEndpoint.Details.CompressionMethods, currentEndpoint.Details.SupportsNpn, currentEndpoint.Details.NpnProtocols, currentEndpoint.Details.SessionTickets, currentEndpoint.Details.OcspStapling, currentEndpoint.Details.SniRequired, currentEndpoint.Details.HttpStatusCode, currentEndpoint.Details.HttpForwarding, checkReturn(report.Cert, 0).KeyStrength, sims, currentEndpoint.Details.ForwardSecrecy, currentEndpoint.Details.Heartbeat, currentEndpoint.Details.Heartbleed, currentEndpoint.Details.Poodle, currentEndpoint.Details.PoodleTLS, currentEndpoint.Details.Logjam, currentEndpoint.Details.Freak, currentEndpoint.Details.OpenSslCcs, currentEndpoint.Details.DhYsReuse, currentEndpoint.Details.DhUsesKnownPrimes, strings.Join(currentEndpoint.Details.DhPrimes, ";"), currentEndpoint.Details.SupportsRc4, currentEndpoint.Details.Rc4WithModern, currentEndpoint.Details.DhUsesKnownPrimes, currentEndpoint.Details.HstsPolicy.MaxAge, currentEndpoint.Details.HstsPolicy.Header, currentEndpoint.Details.HstsPolicy.Status, currentEndpoint.Details.HstsPolicy.IncludeSubDomains, currentEndpoint.Details.HstsPolicy.Preload, hstsPolicyDirectives, string(hpkpPolicy), string(hpkpRoPolicy), currentEndpoint.Details.HasSct, chainPinSha256, chainSha1Hashes, currentEndpoint.Details.Rc4Only, currentEndpoint.Details.ChaCha20Preference, currentEndpoint.Details.DrownVulnerable, checkReturn(report.Cert, 0).MustStaple, currentEndpoint.Details.OpenSSLLuckyMinus20, currentReport.HeaderScore.Score, currentReport.HeaderScore.XFrameOptions, currentReport.HeaderScore.StrictTransportSecurity, currentReport.HeaderScore.XContentTypeOptions, currentReport.HeaderScore.XXSSProtection, currentReport.HeaderScore.ContentSecurityPolicy, currentReport.HeaderScore.ReferrerPolicy, currentReport.ObservatoryScan.Grade, observatoryPassFail, observatoryDescriptions, currentEndpoint.Details.Bleichenbacher, currentEndpoint.FutureGrade, currentEndpoint.GradeTrustIgnored)
+		err = updateScanStatus(table, scanID, reachableHTTP, statusIgnored)
 		if err != nil {
-			if logLevel >= LOG_ERROR {
-				logger.Printf("[ERROR] Error executing SQL-Transaction: %v", err)
-			}
-			tx.Rollback()
-			db.Close()
-			return err
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
-		if err == nil {
-			if logLevel >= LOG_TRACE {
-				fmt.Println(result.RowsAffected())
-			}
-			tx.Commit()
+	case scanOnlyHTTP:
+		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
-		db.Close()
-	}
-	return nil
-}
-func checkReturn(exists []LabsCert, index int) LabsCert {
-	if len(exists) == 0 {
-		var empty LabsCert
-		return empty
-	} else {
-		return exists[index]
-	}
-}
-
-// NewqlAssessment starts process of writing the event results in the database
-func NewSqlAssessment(e Event, eventChannel chan Event, logger *log.Logger) {
-	e.senderID = "sql"
-	e.eventType = INTERNAL_ASSESSMENT_STARTING
-	eventChannel <- e
-	maxRetries := globalSQLRetries
-
-	for i := 0; i < maxRetries+1; i++ {
-		timeout := (float32(i) + 1.0) * 0.5
-		err := writeToDb(e.report, logger)
-		if err == nil {
-			break
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(0))
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
-		if i == maxRetries {
-			logger.Printf("[ERROR] Connection to SQL-Server failed after %v retries: %v", maxRetries, err)
-			e.eventType = INTERNAL_ASSESSMENT_FAILED
-			eventChannel <- e
-			return
+		err = updateScanStatus(table, scanID, reachableSSL, statusIgnored)
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, reachableSSL)
 		}
-		if logLevel >= LOG_INFO {
-			logger.Printf("[INFO] Connection to SQL-Server failed, retrying in %v seconds", timeout)
+	case scanBoth:
+		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
-		time.Sleep(time.Duration(timeout) * time.Second)
-	}
-	e.eventType = INTERNAL_ASSESSMENT_COMPLETE
-	eventChannel <- e
-}
-
-// startSqlAssessment calls NewSqlAssessments as a new goroutine
-func (manager *Manager) startSqlAssessment(e Event) {
-	go NewSqlAssessment(e, manager.internalEventChannel, manager.logger)
-	activeSqlAssessments++
-}
-
-// sqlRun starts the manager responsible for writing results in the database
-func (manager *Manager) sqlRun() {
-	for {
-		select {
-		// Handle assessment events (e.g., starting and finishing).
-		case e := <-manager.internalEventChannel:
-			if e.eventType == INTERNAL_ASSESSMENT_FAILED {
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
-				}
-				activeSqlAssessments--
-				e.eventType = FATAL
-				if logLevel >= LOG_ERROR {
-					manager.logger.Printf("[ERROR] sqlWrite for %v ultimately failed", e.host)
-				}
-				e.senderID = "sql"
-				manager.ControlEventChannel <- e
-			}
-
-			if e.eventType == INTERNAL_ASSESSMENT_STARTING {
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] sqlWrite starting: %v", e.host)
-				}
-			}
-
-			if e.eventType == INTERNAL_ASSESSMENT_COMPLETE {
-				if logLevel >= LOG_DEBUG {
-					manager.logger.Printf("[DEBUG] sqlWrite for %v finished", e.host)
-				}
-
-				activeSqlAssessments--
-
-				// We have a finished assessment now that we can add third-party information to
-				// And we won't re-query these third partys by relying on the ssllabs-scan polling
-
-				e.eventType = FINISHED
-
-				manager.OutputEventChannel <- e
-
-				if logLevel >= LOG_INFO {
-					manager.logger.Printf("[INFO] Active assessments: %v", activeSqlAssessments)
-				}
-			}
-
-			break
-		// if someone asked if there are still active assessments
-		case <-manager.CloseChannel:
-			manager.CloseChannel <- (activeSqlAssessments == 0)
-		default:
-			<-time.NewTimer(time.Duration(100) * time.Millisecond).C
-
-			if activeSqlAssessments < maxSqlAssessments {
-				select {
-				case e := <-manager.InputEventChannel:
-					e.tries = 0
-					if logLevel >= LOG_DEBUG {
-						manager.logger.Println("[DEBUG] New event received")
-					}
-					manager.startSqlAssessment(e)
-				case <-time.After(time.Millisecond * 100):
-					break
-				}
-			}
-
-			break
+		err = updateTestWithSSL(table, scanID, reachableSSL, uint8(1))
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableSSL)
+		}
+		err = duplicateScansWithSSL(table, scanID)
+		if err != nil {
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("duplicating  values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
 	}
+}
+
+// updateTestWithSSL updates the TestWithSSL field for all entries of one scan that have the specified reachable value
+func updateTestWithSSL(table string, scanID int, reachable uint8, updateTo uint8) error {
+	_, err := globalDatabase.Exec(fmt.Sprintf(
+		"UPDATE %[1]v "+
+			"SET TestWithSSL = ? "+
+			"WHERE ScanID = ? "+
+			"AND DomainReachable = ?", table), updateTo, scanID, reachable)
+	return err
+}
+
+// updateScanStauts updates the ScanStatus field for all entries of one scan that have the specified reachable value
+func updateScanStatus(table string, scanID int, reachable uint8, updateTo int) error {
+	_, err := globalDatabase.Exec(fmt.Sprintf(
+		"UPDATE %[1]v "+
+			"SET ScanStatus = ? "+
+			"WHERE ScanID = ? "+
+			"AND DomainReachable = ?", table), updateTo, scanID, reachable)
+	return err
+}
+
+// duplicateScansWithSSL duplicates entries for all Scans with should be scanned on HTTP and HTTPS
+func duplicateScansWithSSL(table string, scanID int) {
+	_, err := globalDatabase.Exec(fmt.Sprintf(
+		"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus, TestWithSSL)"+
+			"SELECT ScanID, DomainID, DomainReachable, ScanStatus, 1 AS TestWithSSL"+
+			"FROM %[1]v"+
+			"WHERE ScanID = ?"+
+			"AND DomainReachable = ?", table), scanID, reachableBoth)
+	return err
+}
+
+// saveResults updates table columns defined by "results" for the row defined by "whereCond". The "whereCond"-Parameters are concatenated by ANDs
+func saveResults(table string, whereCond *structs.Struct, results *structs.Struct) error {
+	var err error
+	set, setArgs, err := getSetString(results)
+	if err != nil {
+		return err
+	}
+	where, whereArgs, err := getWhereString(whereCond)
+	if err != nil {
+		return err
+	}
+	_, err = globalDatabase.Exec(fmt.Sprintf(
+		"UPDATE %[1]v "+
+			"SET %s "+
+			"WHERE %s", table, set, where), append(setArgs, whereArgs))
+
+	return err
+}
+
+// getSetString returns the Set-String  for a SQL UPDATE based on the serialized String "results"
+func getSetString(results structs.Struct) (string, []interface{}, error) {
+	var set string
+	var err error
+	var args []interface{}
+	for index, f := range results.Fields() {
+		if index > 0 {
+			set += ", "
+		}
+		set += f.Name() + " = ?"
+		args = append(args, f.Value())
+	}
+	return set, args, nil
+}
+
+// getWhereString returns the Where-String for an SQL query. whereCond can only contain used Values
+func getWhereString(whereCond structs.Struct) (string, []interface{}, error) {
+	var where string
+	var err error
+	var args []interface{}
+	for index, f := range whereCond.Fields() {
+		if index > 0 {
+			where += " AND "
+		}
+		where += f.Name() + " = ?"
+		args = append(args, f.Value())
+	}
+	return where, args, nil
+}
+
+// insertScanData adds scanData to the scan-Databases
+func insertScanData(tables []string, scanData []ScanData) error {
+	var pos int
+	for pos = maxSQLInserts; pos < len(scanData); pos += maxSQLInserts {
+		for _, tab := range tables {
+			_, err := globalDatabase.Exec(fmt.Sprintf(
+				"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus)"+
+					"VALUES"+strings.Repeat("(?,?,?,?) ,", maxSQLInserts-1)+"(?,?,?,?)", tab),
+				sliceScanDataToArgs(scanData[pos-maxSQLInserts:pos], statusPending)...)
+		}
+	}
+	for _, tab := range tables {
+		_, err := globalDatabase.Exec(fmt.Sprintf(
+			"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus)"+
+				"VALUES"+strings.Repeat("(?,?,?,?) ,", pos-maxSQLInserts-len(scanData)-1)+"(?,?,?,?)", tab),
+			sliceScanDataToArgs(scanData[pos-maxSQLInserts:], statusPending)...)
+	}
+
+}
+
+// sliceScanDataToArgs returns the scanData struct as an interface Slice to use as args...
+func sliceScanDataToArgs(scanData []ScanData, scanStatus int) []interface{} {
+	var res []interface{}
+	for _, sD := range scanData {
+		res = append(res, sD.ScanID, sD.DomainID, sD.DomainReachable, scanStatus)
+	}
+	return res
 }
