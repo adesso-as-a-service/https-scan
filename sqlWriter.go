@@ -1,13 +1,14 @@
 package main
 
-import _ "github.com/denisenkom/go-mssqldb"
-
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
+	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/fatih/structs"
 )
 
@@ -17,6 +18,15 @@ var globalDatabase *sql.DB
 var maxSQLInserts = 300
 
 // Datatypes
+
+// SQLConfiguration collects the Data needed for Connecting to an SQL-Database
+type SQLConfiguration struct {
+	SQLServer     string
+	SQLUserID     string
+	SQLPassword   string
+	SQLDatabase   string
+	SQLEncryption string
+}
 
 // DomainsReachable is the base type for receiving the domains which should be scanned
 type DomainsReachable struct {
@@ -28,7 +38,8 @@ type DomainsReachable struct {
 
 // openDatabase opens the database used for accessing domains and saving results
 func openDatabase(conf SQLConfiguration) error {
-	globalDatabase, err := sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
+	var err error
+	globalDatabase, err = sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
 		conf.SQLServer, conf.SQLUserID, conf.SQLPassword, conf.SQLDatabase, conf.SQLEncryption))
 	return err
 }
@@ -113,6 +124,7 @@ func prepareScanData(table string, scanID int, scanType int) error {
 			log.Fatalf("duplicating  values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
 	}
+	return nil
 }
 
 // updateTestWithSSL updates the TestWithSSL field for all entries of one scan that have the specified reachable value
@@ -136,24 +148,21 @@ func updateScanStatus(table string, scanID int, reachable uint8, updateTo int) e
 }
 
 // duplicateScansWithSSL duplicates entries for all Scans with should be scanned on HTTP and HTTPS
-func duplicateScansWithSSL(table string, scanID int) {
+func duplicateScansWithSSL(table string, scanID int) error {
 	_, err := globalDatabase.Exec(fmt.Sprintf(
-		"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus, TestWithSSL)"+
-			"SELECT ScanID, DomainID, DomainReachable, ScanStatus, 1 AS TestWithSSL"+
-			"FROM %[1]v"+
-			"WHERE ScanID = ?"+
-			"AND DomainReachable = ?", table), scanID, reachableBoth)
+		"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus, TestWithSSL) "+
+			"SELECT ScanID, DomainID, DomainReachable, ScanStatus, 1 AS TestWithSSL "+
+			"FROM %[1]v "+
+			"WHERE ScanID = ? "+
+			"AND DomainReachable = ? ", table), scanID, reachableBoth)
 	return err
 }
 
 // saveResults updates table columns defined by "results" for the row defined by "whereCond". The "whereCond"-Parameters are concatenated by ANDs
 func saveResults(table string, whereCond *structs.Struct, results *structs.Struct) error {
 	var err error
-	set, setArgs, err := getSetString(results)
-	if err != nil {
-		return err
-	}
-	where, whereArgs, err := getWhereString(whereCond)
+	set, setArgs := getSetString(results)
+	where, whereArgs := getWhereString(whereCond)
 	if err != nil {
 		return err
 	}
@@ -166,9 +175,8 @@ func saveResults(table string, whereCond *structs.Struct, results *structs.Struc
 }
 
 // getSetString returns the Set-String  for a SQL UPDATE based on the serialized String "results"
-func getSetString(results structs.Struct) (string, []interface{}, error) {
+func getSetString(results *structs.Struct) (string, []interface{}) {
 	var set string
-	var err error
 	var args []interface{}
 	for index, f := range results.Fields() {
 		if index > 0 {
@@ -177,13 +185,12 @@ func getSetString(results structs.Struct) (string, []interface{}, error) {
 		set += f.Name() + " = ?"
 		args = append(args, f.Value())
 	}
-	return set, args, nil
+	return set, args
 }
 
 // getWhereString returns the Where-String for an SQL query. whereCond can only contain used Values
-func getWhereString(whereCond structs.Struct) (string, []interface{}, error) {
+func getWhereString(whereCond *structs.Struct) (string, []interface{}) {
 	var where string
-	var err error
 	var args []interface{}
 	for index, f := range whereCond.Fields() {
 		if index > 0 {
@@ -192,7 +199,7 @@ func getWhereString(whereCond structs.Struct) (string, []interface{}, error) {
 		where += f.Name() + " = ?"
 		args = append(args, f.Value())
 	}
-	return where, args, nil
+	return where, args
 }
 
 // insertScanData adds scanData to the scan-Databases
@@ -201,18 +208,24 @@ func insertScanData(tables []string, scanData []ScanData) error {
 	for pos = maxSQLInserts; pos < len(scanData); pos += maxSQLInserts {
 		for _, tab := range tables {
 			_, err := globalDatabase.Exec(fmt.Sprintf(
-				"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus)"+
+				"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus) "+
 					"VALUES"+strings.Repeat("(?,?,?,?) ,", maxSQLInserts-1)+"(?,?,?,?)", tab),
 				sliceScanDataToArgs(scanData[pos-maxSQLInserts:pos], statusPending)...)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	for _, tab := range tables {
 		_, err := globalDatabase.Exec(fmt.Sprintf(
-			"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus)"+
+			"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus) "+
 				"VALUES"+strings.Repeat("(?,?,?,?) ,", pos-maxSQLInserts-len(scanData)-1)+"(?,?,?,?)", tab),
 			sliceScanDataToArgs(scanData[pos-maxSQLInserts:], statusPending)...)
+		if err != nil {
+			return err
+		}
 	}
-
+	return nil
 }
 
 // sliceScanDataToArgs returns the scanData struct as an interface Slice to use as args...
@@ -222,4 +235,41 @@ func sliceScanDataToArgs(scanData []ScanData, scanStatus int) []interface{} {
 		res = append(res, sD.ScanID, sD.DomainID, sD.DomainReachable, scanStatus)
 	}
 	return res
+}
+
+// readSqlConfig extracts the information out of the "sql_config.json" file
+func readSQLConfig(file string) (SQLConfiguration, error) {
+	configFile, err := os.Open(file)
+	var config SQLConfiguration
+	if err != nil {
+		return config, err
+	}
+	defer configFile.Close()
+	decoder := json.NewDecoder(configFile)
+	decoderErr := decoder.Decode(&config)
+	if decoderErr != nil {
+		return config, decoderErr
+	}
+	return config, nil
+}
+
+func getDomains() ([]DomainsRow, error) {
+	var results []DomainsRow
+	var help DomainsRow
+	rows, err := globalDatabase.Query(
+		"Select DomainID, DomainName " +
+			"FROM Domains")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		if err := rows.Scan(&help.DomainID, &help.DomainName); err != nil {
+			return nil, err
+		}
+		results = append(results, help)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
