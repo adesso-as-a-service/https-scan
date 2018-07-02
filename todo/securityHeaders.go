@@ -25,7 +25,6 @@ var maxSecHAssessments = 10
 // Securityheaders is the object used for unmarshalling the results by the API
 type Securityheaders struct {
 	Score                   string
-	Colour                  string
 	XFrameOptions           string
 	StrictTransportSecurity string
 	XContentTypeOptions     string

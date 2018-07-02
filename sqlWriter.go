@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -32,8 +33,15 @@ type SQLConfiguration struct {
 type DomainsReachable struct {
 	DomainID        int
 	DomainName      string
-	DomainReachable uint8
+	DomainReachable int
 	TestWithSSL     bool
+}
+
+// ScanWhereCond includes all fields needed to specify a particular entry in the Table
+type ScanWhereCond struct {
+	DomainID    int
+	ScanID      int
+	TestWithSSL bool
 }
 
 // openDatabase opens the database used for accessing domains and saving results
@@ -46,18 +54,17 @@ func openDatabase(conf SQLConfiguration) error {
 
 // getScans returns all Domains and their Reachability and how they should be tested. They are
 // selected by the specified "scanID" and the "ScanStatus"
-func getScans(table string, scanID int, scanStatus uint8) []DomainsReachable {
+func getScans(table string, scanID int, scanStatus uint8) ([]DomainsReachable, error) {
 	var result []DomainsReachable
 	var help DomainsReachable
 	rows, err := globalDatabase.Query(fmt.Sprintf(
-		"Select Domains.DomainID, Domains.DomainName, %[1]s.DomainReachable, %[1]s.TestWithSSL "+
+		"SELECT Domains.DomainID, Domains.DomainName, %[1]s.DomainReachable, %[1]s.TestWithSSL "+
 			"FROM Domains, %[1]s "+
 			"WHERE %[1]s.ScanStatus = ? "+
 			"   AND %[1]s.ScanID = ? "+
 			"   AND %[1]s.DomainID = Domains.DomainID", table), scanStatus, scanID)
 	if err != nil {
-		// Better Error Handling needed
-		log.Fatal(err)
+		return nil, err
 	}
 	for rows.Next() {
 		if err := rows.Scan(&help.DomainID, &help.DomainName, &help.DomainReachable, &help.TestWithSSL); err != nil {
@@ -66,9 +73,9 @@ func getScans(table string, scanID int, scanStatus uint8) []DomainsReachable {
 		result = append(result, help)
 	}
 	if err := rows.Err(); err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return result
+	return result, nil
 }
 
 // prepareScan modifies the pending scans according to the "scanType". Entries are duplicated with diffrent "TestWithSSL"-Values, if
@@ -78,51 +85,100 @@ func prepareScanData(table string, scanID int, scanType int) error {
 	case scanOnlySSL:
 		err := updateTestWithSSL(table, scanID, reachableSSL, uint8(1))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableSSL)
 		}
 		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(1))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
 		err = updateScanStatus(table, scanID, reachableHTTP, statusIgnored)
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
 	case scanOnlyHTTP:
 		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(0))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
 		err = updateScanStatus(table, scanID, reachableSSL, statusIgnored)
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, reachableSSL)
 		}
 	case scanBoth:
 		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, reachableSSL, uint8(1))
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableSSL)
 		}
 		err = duplicateScansWithSSL(table, scanID)
 		if err != nil {
+			// Add errorhandling
 			log.Printf("ERROR: %v", err.Error())
 			log.Fatalf("duplicating  values for table '%v' failed for reachable %v", table, reachableBoth)
 		}
+
+	case scanOnePreferHTTP:
+		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
+		}
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(0))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
+		}
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(1))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
+		}
+	case scanOnePreferSSL:
+		err := updateTestWithSSL(table, scanID, reachableHTTP, uint8(0))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableHTTP)
+		}
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(1))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
+		}
+		err = updateTestWithSSL(table, scanID, reachableBoth, uint8(1))
+		if err != nil {
+			// Add errorhandling
+			log.Printf("ERROR: %v", err.Error())
+			log.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, reachableBoth)
+		}
+
 	}
 	return nil
 }
@@ -137,7 +193,7 @@ func updateTestWithSSL(table string, scanID int, reachable uint8, updateTo uint8
 	return err
 }
 
-// updateScanStauts updates the ScanStatus field for all entries of one scan that have the specified reachable value
+// updateScanStatus updates the ScanStatus field for all entries of one scan that have the specified reachable value
 func updateScanStatus(table string, scanID int, reachable uint8, updateTo int) error {
 	_, err := globalDatabase.Exec(fmt.Sprintf(
 		"UPDATE %[1]v "+
@@ -164,12 +220,13 @@ func saveResults(table string, whereCond *structs.Struct, results *structs.Struc
 	set, setArgs := getSetString(results)
 	where, whereArgs := getWhereString(whereCond)
 	if err != nil {
+		// Add errorhandling
 		return err
 	}
 	_, err = globalDatabase.Exec(fmt.Sprintf(
 		"UPDATE %[1]v "+
 			"SET %s "+
-			"WHERE %s", table, set, where), append(setArgs, whereArgs))
+			"WHERE %s", table, set, where), append(setArgs, whereArgs...)...)
 
 	return err
 }
@@ -207,11 +264,13 @@ func insertScanData(tables []string, scanData []ScanData) error {
 	var pos int
 	for pos = maxSQLInserts; pos < len(scanData); pos += maxSQLInserts {
 		for _, tab := range tables {
-			_, err := globalDatabase.Exec(fmt.Sprintf(
+			query := fmt.Sprintf(
 				"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus) "+
-					"VALUES"+strings.Repeat("(?,?,?,?) ,", maxSQLInserts-1)+"(?,?,?,?)", tab),
+					"VALUES "+strings.Repeat("(?,?,?,?) ,", maxSQLInserts-1)+"(?,?,?,?)", tab)
+			_, err := globalDatabase.Exec(query,
 				sliceScanDataToArgs(scanData[pos-maxSQLInserts:pos], statusPending)...)
 			if err != nil {
+				err = fmt.Errorf("While executing\n%s\n an error occured: %v", query, err)
 				return err
 			}
 		}
@@ -219,7 +278,7 @@ func insertScanData(tables []string, scanData []ScanData) error {
 	for _, tab := range tables {
 		_, err := globalDatabase.Exec(fmt.Sprintf(
 			"INSERT INTO %[1]v (ScanID, DomainID, DomainReachable, ScanStatus) "+
-				"VALUES"+strings.Repeat("(?,?,?,?) ,", pos-maxSQLInserts-len(scanData)-1)+"(?,?,?,?)", tab),
+				"VALUES "+strings.Repeat("(?,?,?,?) ,", len(scanData)-(pos-maxSQLInserts)-1)+"(?,?,?,?)", tab),
 			sliceScanDataToArgs(scanData[pos-maxSQLInserts:], statusPending)...)
 		if err != nil {
 			return err
@@ -272,4 +331,92 @@ func getDomains() ([]DomainsRow, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+// Put this in the controller maybe? For order
+
+// insertNewScan creates a new Entry in the ScanTable and returns the ScanID
+func insertNewScan(scan ScanRow) (ScanRow, error) {
+	var err error
+	rows, err := globalDatabase.Query(
+		"INSERT INTO Scans (SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion, Done) "+
+			"OUTPUT inserted.ScanID "+
+			"VALUES (?,?,?,?,?,?,?,?,0)",
+		scan.SSLLabs, scan.SSLLabsVersion, scan.Observatory, scan.ObservatoryVersion, scan.SecurityHeaders, scan.SecurityHeadersVersion, scan.Crawler, scan.CrawlerVersion)
+	if err != nil {
+		return ScanRow{}, err
+	}
+	for rows.Next() {
+		if err := rows.Scan(&scan.ScanID); err != nil {
+			log.Fatal(err)
+		}
+	}
+	return scan, err
+}
+
+// getLastScan returns the specified by Id. If id==0, then it returns the last unfinished scan
+func getLastScan(id int) (ScanRow, error) {
+	var err error
+	var query string
+	var scan ScanRow
+	query = "SELECT TOP(1) ScanID, SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion " +
+		"FROM Scans " +
+		"WHERE Done = 0 "
+	if id != 0 {
+		query += fmt.Sprintf("AND ScanID = %d ", id)
+	}
+	query += "ORDER BY StartTime DESC "
+
+	rows, err := globalDatabase.Query(
+		query)
+	if err != nil {
+		return ScanRow{}, err
+	}
+	for rows.Next() {
+		if err := rows.Scan(&scan.ScanID, &scan.SSLLabs, &scan.SSLLabsVersion, &scan.Observatory, &scan.ObservatoryVersion, &scan.SecurityHeaders, &scan.SecurityHeadersVersion); err != nil {
+			log.Fatal(err)
+		}
+	}
+	return scan, err
+}
+
+//Update the specified Scan
+func updateScan(scan ScanRow) error {
+	var err error
+	_, err = globalDatabase.Exec(
+		"UPDATE Scans "+
+			"SET Unreachable = ?, Total = ?, Done =? "+
+			"WHERE ScanID = ?",
+		scan.Unreachable, scan.Total, scan.Done, scan.ScanID)
+	return err
+}
+
+func saveCertificates(rows []*CertificateRow, table string) error {
+	ctx := context.Background()
+	for _, row := range rows {
+		query := `
+IF NOT EXISTS (SELECT * FROM %[1]v WHERE Thumbprint = ?) 
+	BEGIN
+		INSERT INTO %[1]v 
+		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NotBefore, NotAfter, NextThumbprint)
+		VALUES
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	END
+ELSE
+	BEGIN
+		UPDATE  %[1]v
+		SET Issues = ?
+		WHERE Thumbprint = ?
+	END
+`
+		var err error
+		_, err = globalDatabase.ExecContext(ctx,
+			fmt.Sprintf(query, table),
+			row.Thumbprint, row.Thumbprint, row.SerialNumber, row.Subject, row.Issuer, row.SigAlg, row.RevocationStatus, row.Issues,
+			row.KeyStrength, row.DebianInsecure, row.NotBefore, row.NotAfter, row.NextThumbprint, row.Issues, row.Thumbprint)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
