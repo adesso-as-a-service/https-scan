@@ -1,8 +1,11 @@
-package main
+package observatory
+
+//Done
 
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -10,10 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"../../backend"
+	"../../hooks"
 	"github.com/fatih/structs"
 )
 
-type ObsTableRow struct {
+type TableRow struct {
 	Grade         string
 	Score         int
 	TestsFailed   int
@@ -64,29 +69,32 @@ type ObsTableRow struct {
 	ScanStatus int
 }
 
-// ObservatoryMaxRedirects sets the maximum number of Redirects to be followed
-var obsMaxRedirects uint8 = 10
+// maximum Number of parallel Scans
+var maxScans int = 10
 
 // crawlerVersion
-var obsVersion = "10"
+var version = "10"
 
-// crawlerManager
-var obsManager = Manager{
-	3,  //Max Retries
-	10, //Max parallel Scans
-	crawlerVersion,
-	"Observatory",          //Table name
-	scanOnePreferHTTP,      // Scan HTTP or HTTPS
-	nil,                    //output channel
-	logDebug,               //loglevel
-	scanStatus{0, 0, 0, 0}, // initial scanStatus
-	0,                   // number of errors while finishing
-	0,                   // scanID
-	[]internalMessage{}, //errors
-	false,               //hasn't started first scan
+var used *bool
+
+var maxRetries *int
+
+var manager = hooks.Manager{
+	MaxRetries:       3,        //Max Retries
+	MaxParallelScans: maxScans, //Max parallel Scans
+	Version:          version,
+	Table:            "Observatory",             //Table name
+	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
+	OutputChannel:    nil,                       //output channel
+	LogLevel:         hooks.LogNotice,           //loglevel
+	Status:           hooks.ScanStatus{},        // initial scanStatus
+	FinishError:      0,                         // number of errors while finishing
+	ScanID:           0,                         // scanID
+	Errors:           []hooks.InternalMessage{}, //errors
+	FirstScan:        false,                     //hasn't started first scan
 }
 
-type ObsPolicy struct {
+type Policy struct {
 	AntiClickjacking      bool
 	DefaultNone           bool
 	InsecureBaseUri       bool
@@ -100,7 +108,7 @@ type ObsPolicy struct {
 	UnsafeObjects         bool
 }
 
-type ObsCookie struct {
+type Cookie struct {
 	Domain   string
 	Expires  *int64
 	Httponly bool
@@ -111,9 +119,9 @@ type ObsCookie struct {
 	Secure   bool
 }
 
-// ObservatoryAnalyzeResult is the object to contain the response we get
+// AnalyzeResult is the object to contain the response we get
 // From starting an Observatory-Scan
-type ObsAnalyzeResult struct {
+type AnalyzeResult struct {
 	EndTime         string `json:"end_time"`
 	Grade           string `json:"grade"`
 	ResponseHeaders struct {
@@ -134,9 +142,9 @@ type ObsAnalyzeResult struct {
 	TestsQuantity int    `json:"tests_quantity"`
 }
 
-// ObservatoryScanResults are the results we get once we have a finished scan and
+// ScanResults are the results we get once we have a finished scan and
 // Query the API for our results
-type ObsScanResults struct {
+type ScanResults struct {
 	ContentSecurityPolicy struct {
 		Expectation string `json:"expectation"`
 		Name        string `json:"name"`
@@ -144,7 +152,7 @@ type ObsScanResults struct {
 			Data   map[string][]string
 			Http   bool
 			Meta   bool
-			Policy ObsPolicy
+			Policy Policy
 		} `json:"output"`
 		Pass             bool   `json:"pass"`
 		Result           string `json:"result"`
@@ -166,7 +174,7 @@ type ObsScanResults struct {
 		Expectation string `json:"expectation"`
 		Name        string `json:"name"`
 		Output      struct {
-			Data     map[string]ObsCookie
+			Data     map[string]Cookie
 			SameSite *bool
 		} `json:"output"`
 		Pass             bool   `json:"pass"`
@@ -282,42 +290,42 @@ type ObsScanResults struct {
 
 // invokeObservatoryAnalyzation starts an HTTP-Observatory assessment and polls
 // To see if the scan is done, then adding the result to the calling LabsReport object
-func invokeObservatoryAnalyzation(host string) (ObsAnalyzeResult, error) {
+func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 	apiURL := "https://http-observatory.security.mozilla.org/api/v1/analyze?host=" + host
-	var analyzeResult ObsAnalyzeResult
+	var analyzeResult AnalyzeResult
 
-	if logLevel >= logInfo {
+	if manager.LogLevel >= hooks.LogInfo {
 		log.Printf("[INFO] Getting observatory analyzation: %v", host)
 	}
 
 	// Initiate the scan request, the body of the request contains information to hide the scan from the front-page
 	_, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader("hidden=true&rescan=false"))
 	if err != nil {
-		if logLevel >= logError {
+		if manager.LogLevel >= hooks.LogError {
 			log.Printf("[ERROR] Error invoking observatory API for %v : %v", host, err)
 		}
-		return ObsAnalyzeResult{}, err
+		return AnalyzeResult{}, err
 	}
 
 	// Poll every 5 seconds until scan is done, aborting on abnormal or failed states
 	for {
 		response, err := http.Get(apiURL)
 		if err != nil {
-			if logLevel >= logError {
+			if manager.LogLevel >= hooks.LogError {
 				log.Printf("[ERROR] Error polling observatory API for %v : %v", host, err)
 			}
-			return ObsAnalyzeResult{}, err
+			return AnalyzeResult{}, err
 		}
 		defer response.Body.Close()
 		analyzeBody, err := ioutil.ReadAll(response.Body)
 		err = json.Unmarshal(analyzeBody, &analyzeResult)
 
 		if err != nil {
-			if logLevel >= logError {
+			if manager.LogLevel >= hooks.LogError {
 				log.Printf("[ERROR] Error unmarshalling: %v", err)
 			}
 		}
-		if logLevel >= logDebug {
+		if manager.LogLevel >= hooks.LogDebug {
 			log.Printf("[DEBUG] Observatory Scan is currently %v for host: %v", analyzeResult.State, host)
 		}
 		switch analyzeResult.State {
@@ -325,48 +333,48 @@ func invokeObservatoryAnalyzation(host string) (ObsAnalyzeResult, error) {
 			return analyzeResult, nil
 		case "ABORTED":
 			observatoryStateError := errors.New("Observatory scan aborted for technical reasons at observatory API")
-			if logLevel >= logError {
+			if manager.LogLevel >= hooks.LogError {
 				log.Printf("[ERROR] Observatory scan failed for host %v", host)
 			}
-			return ObsAnalyzeResult{}, observatoryStateError
+			return AnalyzeResult{}, observatoryStateError
 		case "FAILED":
 			observatoryStateError := errors.New("Failed to request observatory scan")
-			if logLevel >= logError {
+			if manager.LogLevel >= hooks.LogError {
 				log.Printf("[ERROR] Observatory scan failed for host %v", host)
 			}
-			return ObsAnalyzeResult{}, observatoryStateError
+			return AnalyzeResult{}, observatoryStateError
 		case "PENDING", "RUNNING", "STARTING":
 			time.Sleep(5 * time.Second)
 			continue
 		default:
 			observatoryStateError := errors.New("Could not request observatory scan")
-			if logLevel >= logError {
+			if manager.LogLevel >= hooks.LogError {
 				log.Printf("[ERROR] Error getting Observatory state for host %v", host)
 			}
-			return ObsAnalyzeResult{}, observatoryStateError
+			return AnalyzeResult{}, observatoryStateError
 		}
 	}
 }
 
 // InvokeObservatoryResults gets the results of an already done scan and
 // And adds them to the calling LabsReport object
-func invokeObservatoryResults(analyzeResults ObsAnalyzeResult) (ObsScanResults, error) {
-	var scanResults ObsScanResults
+func invokeObservatoryResults(analyzeResults AnalyzeResult) (ScanResults, error) {
+	var scanResults ScanResults
 	// Getting the results of an unfinished scan won't work -- abort
 	if analyzeResults.State != "FINISHED" {
-		if logLevel >= logError {
+		if manager.LogLevel >= hooks.LogError {
 			log.Printf("[ERROR] Analysis not finished but tried to get results")
 		}
-		return ObsScanResults{}, errors.New("Invoked results without finished analysis")
+		return ScanResults{}, errors.New("Invoked results without finished analysis")
 	}
 
 	resultApiUrl := "https://http-observatory.security.mozilla.org/api/v1/getScanResults?scan=" + strconv.Itoa(analyzeResults.ScanID)
 	response, err := http.Get(resultApiUrl)
 	if err != nil {
-		if logLevel >= logError {
+		if manager.LogLevel >= hooks.LogError {
 			log.Printf("[ERROR] Error invoking observatory API for current host: %v", err)
 		}
-		return ObsScanResults{}, err
+		return ScanResults{}, err
 	}
 	resultsBody, err := ioutil.ReadAll(response.Body)
 	// Since we're getting a JSON as a response, unmarshal it into a new ObservatoryScanResults object
@@ -375,20 +383,25 @@ func invokeObservatoryResults(analyzeResults ObsAnalyzeResult) (ObsScanResults, 
 	return scanResults, nil
 }
 
-func (manager *Manager) obsHandleScan(domains []DomainsReachable, internalChannel chan internalMessage) []DomainsReachable {
-	for len(domains) > 0 && int(manager.status.getCurrentScans()) < manager.maxParallelScans {
-		manager.firstScan = true
+func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.InternalMessage) []hooks.DomainsReachable {
+	for len(domains) > 0 && int(manager.Status.GetCurrentScans()) < manager.MaxParallelScans {
+		manager.FirstScan = true
 		// pop fist domain
 		scan, retDom := domains[0], domains[1:]
-		scanMsg := internalMessage{scan, nil, 0, internalNew}
-		go manager.obsAssessment(scanMsg, internalChannel)
-		manager.status.addCurrentScans(1)
+		scanMsg := hooks.InternalMessage{
+			Domain:     scan,
+			Results:    nil,
+			Retries:    0,
+			StatusCode: hooks.InternalNew,
+		}
+		go assessment(scanMsg, internalChannel)
+		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
 	return domains
 }
 
-func parseCSP(policy ObsPolicy) uint16 {
+func parseCSP(policy Policy) uint16 {
 	var ret uint16
 
 	if !policy.AntiClickjacking {
@@ -438,10 +451,10 @@ func parseCSP(policy ObsPolicy) uint16 {
 	return ret
 }
 
-func parseObsResult(obsResult ObsScanResults, obsAnaly ObsAnalyzeResult) ObsTableRow {
-	var row ObsTableRow
+func parseResult(obsResult ScanResults, obsAnaly AnalyzeResult) TableRow {
+	var row TableRow
 
-	row.Grade = truncate(obsAnaly.Grade, 2)
+	row.Grade = hooks.Truncate(obsAnaly.Grade, 2)
 	row.Score = obsAnaly.Score
 
 	row.TestsFailed = obsAnaly.TestsFailed
@@ -450,54 +463,54 @@ func parseObsResult(obsResult ObsScanResults, obsAnaly ObsAnalyzeResult) ObsTabl
 
 	row.CSPPassed = obsResult.ContentSecurityPolicy.Pass
 	row.CSPEval = parseCSP(obsResult.ContentSecurityPolicy.Output.Policy)
-	row.CSPDesc = truncate(obsResult.ContentSecurityPolicy.ScoreDescription, 250)
-	row.CSPResult = truncate(obsResult.ContentSecurityPolicy.Result, 100)
+	row.CSPDesc = hooks.Truncate(obsResult.ContentSecurityPolicy.ScoreDescription, 250)
+	row.CSPResult = hooks.Truncate(obsResult.ContentSecurityPolicy.Result, 100)
 
 	row.CookiesPassed = obsResult.Cookies.Pass
-	row.CookiesDesc = truncate(obsResult.Cookies.ScoreDescription, 250)
-	row.CookiesResult = truncate(obsResult.Cookies.Result, 100)
+	row.CookiesDesc = hooks.Truncate(obsResult.Cookies.ScoreDescription, 250)
+	row.CookiesResult = hooks.Truncate(obsResult.Cookies.Result, 100)
 
 	row.CORSPassed = obsResult.CrossOriginResourceSharing.Pass
-	row.CORSDesc = truncate(obsResult.CrossOriginResourceSharing.ScoreDescription, 250)
-	row.CORSResult = truncate(obsResult.CrossOriginResourceSharing.Result, 100)
+	row.CORSDesc = hooks.Truncate(obsResult.CrossOriginResourceSharing.ScoreDescription, 250)
+	row.CORSResult = hooks.Truncate(obsResult.CrossOriginResourceSharing.Result, 100)
 
 	row.HPKPPassed = obsResult.PublicKeyPinning.Pass
-	row.HPKPDesc = truncate(obsResult.PublicKeyPinning.ScoreDescription, 250)
-	row.HPKPResult = truncate(obsResult.PublicKeyPinning.Result, 100)
+	row.HPKPDesc = hooks.Truncate(obsResult.PublicKeyPinning.ScoreDescription, 250)
+	row.HPKPResult = hooks.Truncate(obsResult.PublicKeyPinning.Result, 100)
 
 	row.RedirectionPassed = obsResult.Redirection.Pass
-	row.RedirectionDesc = truncate(obsResult.Redirection.ScoreDescription, 250)
-	row.RedirectionResult = truncate(obsResult.Redirection.Result, 100)
+	row.RedirectionDesc = hooks.Truncate(obsResult.Redirection.ScoreDescription, 250)
+	row.RedirectionResult = hooks.Truncate(obsResult.Redirection.Result, 100)
 
 	row.HSTSPassed = obsResult.StrictTransportSecurity.Pass
-	row.HSTSDesc = truncate(obsResult.StrictTransportSecurity.ScoreDescription, 250)
-	row.HSTSResult = truncate(obsResult.StrictTransportSecurity.Result, 100)
+	row.HSTSDesc = hooks.Truncate(obsResult.StrictTransportSecurity.ScoreDescription, 250)
+	row.HSTSResult = hooks.Truncate(obsResult.StrictTransportSecurity.Result, 100)
 
 	row.SRIPassed = obsResult.SubresourceIntegrity.Pass
-	row.SRIDesc = truncate(obsResult.SubresourceIntegrity.ScoreDescription, 250)
-	row.SRIResult = truncate(obsResult.SubresourceIntegrity.Result, 100)
+	row.SRIDesc = hooks.Truncate(obsResult.SubresourceIntegrity.ScoreDescription, 250)
+	row.SRIResult = hooks.Truncate(obsResult.SubresourceIntegrity.Result, 100)
 
 	row.XContentTypePassed = obsResult.XContentTypeOptions.Pass
-	row.XContentTypeDesc = truncate(obsResult.XContentTypeOptions.ScoreDescription, 250)
-	row.XContentTypeResult = truncate(obsResult.XContentTypeOptions.Result, 100)
+	row.XContentTypeDesc = hooks.Truncate(obsResult.XContentTypeOptions.ScoreDescription, 250)
+	row.XContentTypeResult = hooks.Truncate(obsResult.XContentTypeOptions.Result, 100)
 
 	row.XFrameOptionsPassed = obsResult.XFrameOptions.Pass
-	row.XFrameOptionsDesc = truncate(obsResult.XFrameOptions.ScoreDescription, 250)
-	row.XFrameOptionsResult = truncate(obsResult.XFrameOptions.Result, 100)
+	row.XFrameOptionsDesc = hooks.Truncate(obsResult.XFrameOptions.ScoreDescription, 250)
+	row.XFrameOptionsResult = hooks.Truncate(obsResult.XFrameOptions.Result, 100)
 
 	row.XXSSProtectionPassed = obsResult.XXSSProtection.Pass
-	row.XXSSProtectionDesc = truncate(obsResult.XXSSProtection.ScoreDescription, 250)
-	row.XXSSProtectionResult = truncate(obsResult.XXSSProtection.Result, 100)
+	row.XXSSProtectionDesc = hooks.Truncate(obsResult.XXSSProtection.ScoreDescription, 250)
+	row.XXSSProtectionResult = hooks.Truncate(obsResult.XXSSProtection.Result, 100)
 	return row
 }
 
-func (manager *Manager) obsAssessment(scan internalMessage, internalChannel chan internalMessage) {
-	analyze, err := invokeObservatoryAnalyzation(scan.domain.DomainName)
+func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
+	analyze, err := invokeObservatoryAnalyzation(scan.Domain.DomainName)
 	if err != nil {
 		//TODO Handle Error
-		log.Printf("Observatory couldn't get Results for %d: %s", scan.domain.DomainID, err.Error())
-		scan.results = ObsTableRow{}
-		scan.statusCode = internalFatalError
+		log.Printf("Observatory couldn't get Results for %d: %s", scan.Domain.DomainID, err.Error())
+		scan.Results = TableRow{}
+		scan.StatusCode = hooks.InternalFatalError
 		internalChannel <- scan
 		return
 	}
@@ -506,46 +519,95 @@ func (manager *Manager) obsAssessment(scan internalMessage, internalChannel chan
 
 	if err != nil {
 		//TODO Handle Error
-		log.Printf("Observatory couldn't get Results for %d: %s", scan.domain.DomainID, err.Error())
-		scan.results = ObsTableRow{}
-		scan.statusCode = internalFatalError
+		log.Printf("Observatory couldn't get Results for %d: %s", scan.Domain.DomainID, err.Error())
+		scan.Results = TableRow{}
+		scan.StatusCode = hooks.InternalFatalError
 		internalChannel <- scan
 		return
 	}
 
-	row := parseObsResult(results, analyze)
+	row := parseResult(results, analyze)
 
-	scan.results = row
-	scan.statusCode = internalSuccess
+	scan.Results = row
+	scan.StatusCode = hooks.InternalSuccess
 	internalChannel <- scan
 }
 
-func (manager *Manager) obsHandleResults(result internalMessage) {
-	res, ok := result.results.(ObsTableRow)
+func handleResults(result hooks.InternalMessage) {
+	res, ok := result.Results.(TableRow)
 	//TODO FIX with error handling
-	manager.status.addCurrentScans(-1)
+	manager.Status.AddCurrentScans(-1)
 
 	if !ok {
 		//TODO Handle Error
 
 		log.Print("observatory manager couldn't assert type")
-		res = ObsTableRow{}
-		result.statusCode = internalFatalError
+		res = TableRow{}
+		result.StatusCode = hooks.InternalFatalError
 	}
 
-	switch result.statusCode {
-	case internalFatalError:
-		res.ScanStatus = statusError
-		manager.status.addErrorScans(1)
-	case internalSuccess:
-		res.ScanStatus = statusDone
-		manager.status.addFinishedScans(1)
+	switch result.StatusCode {
+	case hooks.InternalFatalError:
+		res.ScanStatus = hooks.StatusError
+		manager.Status.AddErrorScans(1)
+	case hooks.InternalSuccess:
+		res.ScanStatus = hooks.StatusDone
+		manager.Status.AddFinishedScans(1)
 	}
-	where := ScanWhereCond{result.domain.DomainID, manager.scanID, result.domain.TestWithSSL}
-	err := saveResults(manager.getTableName(), structs.New(where), structs.New(res))
+	where := hooks.ScanWhereCond{
+		DomainID:    result.Domain.DomainID,
+		ScanID:      manager.ScanID,
+		TestWithSSL: result.Domain.TestWithSSL}
+	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
 		//TODO Handle Error
-		log.Printf("observatory couldn't save results for %s: %s", result.domain.DomainName, err.Error())
+		log.Printf("observatory couldn't save results for %s: %s", result.Domain.DomainName, err.Error())
 		return
 	}
+}
+
+func flagSetUp() {
+	used = flag.Bool("no-observatory", false, "Don't use the mozilla-observatory-Scan")
+	maxRetries = flag.Int("obs-retries", 3, "Number of retries for the mozilla-observatory-Scan")
+}
+
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+	currentScan.Observatory = !*used
+	currentScan.ObservatoryVersion = manager.Version
+	if !*used {
+		if manager.MaxParallelScans != 0 {
+			manager.MaxRetries = *maxRetries
+			manager.OutputChannel = channel
+			return true
+		}
+	}
+	return false
+}
+
+func continueScan(scan hooks.ScanRow) bool {
+	if manager.Version != scan.ObservatoryVersion {
+		return false
+	}
+	return true
+}
+
+func setUp() {
+
+}
+
+func init() {
+	hooks.ManagerMap[manager.Table] = &manager
+
+	hooks.FlagSetUp[manager.Table] = flagSetUp
+
+	hooks.ConfigureSetUp[manager.Table] = configureSetUp
+
+	hooks.ContinueScan[manager.Table] = continueScan
+
+	hooks.ManagerSetUp[manager.Table] = setUp
+
+	hooks.ManagerHandleScan[manager.Table] = handleScan
+
+	hooks.ManagerHandleResults[manager.Table] = handleResults
+
 }

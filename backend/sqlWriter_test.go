@@ -1,11 +1,4 @@
-package main
-
-import (
-	"fmt"
-	"testing"
-
-	"github.com/fatih/structs"
-)
+package backend
 
 type SQLTestTableRow struct {
 	Bool       bool
@@ -15,6 +8,7 @@ type SQLTestTableRow struct {
 	ScanStatus int
 }
 
+/*
 func TestSQLWriter(t *testing.T) {
 	//readingSQLConfig
 	config, err := readSQLConfig("sql_config.json")
@@ -47,9 +41,9 @@ func TestSQLWriter(t *testing.T) {
 	}
 
 	// Adding Scan Entries
-	var testData []ScanData
+	var testData []hooks.ScanData
 	for i := 0; i < 9; i++ {
-		testData = append(testData, ScanData{})
+		testData = append(testData, hooks.ScanData{})
 	}
 	testData[0].DomainID = 1
 	testData[1].DomainID = 2
@@ -61,7 +55,7 @@ func TestSQLWriter(t *testing.T) {
 	testData[7].DomainID = 2
 	testData[8].DomainID = 3
 
-	testData[0].DomainReachable = reachableHTTP
+	testData[0].DomainReachable = hooks.ReachableHTTP
 	testData[1].DomainReachable = reachableSSL
 	testData[2].DomainReachable = reachableBoth
 	testData[3].DomainReachable = reachableHTTP
@@ -244,3 +238,4 @@ func TestSQLWriter(t *testing.T) {
 		t.Log("Saving Results Test completed")
 	}
 }
+*/

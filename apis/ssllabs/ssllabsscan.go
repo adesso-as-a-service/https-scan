@@ -17,13 +17,14 @@
  * limitations under the License.
  */
 
-// work in progress
-package main
+package ssllabs
 
 import (
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -34,58 +35,65 @@ import (
 	"sync/atomic"
 	"time"
 
+	"../../backend"
+	"../../hooks"
 	"github.com/fatih/structs"
 )
 
-var sslLabsManager = Manager{
-	3,  //Max Retries
-	10, //Max parallel Scans
-	labsVersion,
-	"SSLLabs",              //Table name
-	scanOnlySSL,            // Scan HTTP and HTTPS
-	nil,                    //output channel
-	logDebug,               //loglevel
-	scanStatus{0, 0, 0, 0}, // initial scanStatus
-	0,                   // number of errors while finishing
-	0,                   // scanID
-	[]internalMessage{}, //errors
-	false,               //has not started first scan
+var maxScans = 10
+
+var used *bool
+
+// crawlerVersion
+var version = "10"
+
+var maxRetries *int
+
+// crawlerManager
+var manager = hooks.Manager{
+	MaxRetries:       3,        //Max Retries
+	MaxParallelScans: maxScans, //Max parallel Scans
+	Version:          version,
+	Table:            "SSLLabs",                 //Table name
+	ScanType:         hooks.ScanOnlySSL,         // Scan HTTP or HTTPS
+	OutputChannel:    nil,                       //output channel
+	LogLevel:         hooks.LogNotice,           //loglevel
+	Status:           hooks.ScanStatus{},        // initial scanStatus
+	FinishError:      0,                         // number of errors while finishing
+	ScanID:           0,                         // scanID
+	Errors:           []hooks.InternalMessage{}, //errors
+	FirstScan:        false,                     //hasn't started first scan
 }
 
 var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id$)"
 
-// How many assessment do we have in progress?
-var LabsActiveAssessments = 0
-
 // How many assessments does the server think we have in progress?
-var LabsCurrentAssessments = -1
+var currentAssessments = -1
 
 // The maximum number of assessments we can have in progress at any one time.
-var LabsMaxAssessments = -1
+var maxAssessments = -1
 
-var LabsRequestCounter uint64 = 0
+var requestCounter uint64
 
-var LabsApiLocation = "https://api.ssllabs.com/api/v3"
+var APILocation = "https://api.ssllabs.com/api/v3"
 
-var LabsNewAssessmentCoolOff int64 = 1100
+var newAssessmentCoolOff int64 = 1100
 
-var LabsIgnoreMismatch = true
+var ignoreMismatch = true
 
-var LabsStartNew = true
+var startNew = true
 
-var LabsFromCache = false
+var fromCache = false
 
-var LabsMaxAge = 0
+var maxAge = 0
 
-var LabsInsecure = false
+var insecure = false
 
-var LabsHttpClient *http.Client
+var httpClient *http.Client
 
-var LabsLastTime time.Time
+var lastTime time.Time
 
-var labsVersion = "10"
-
-var CertificatesTable = "CertificatesV10"
+var certificatesTable = "CertificatesV10"
 
 type LabsError struct {
 	Field   string
@@ -105,23 +113,7 @@ func (e LabsErrorResponse) Error() string {
 	}
 }
 
-type CertificateRow struct {
-	Thumbprint       string
-	ID               string
-	SerialNumber     string
-	Subject          string
-	Issuer           string
-	SigAlg           string
-	RevocationStatus uint8
-	Issues           int16
-	KeyStrength      int16
-	DebianInsecure   bool
-	NotBefore        int64
-	NotAfter         int64
-	NextThumbprint   string
-}
-
-type SSLLabsTableRow struct {
+type TableRow struct {
 	IP                        string
 	StartTime                 int64
 	TestTime                  int64
@@ -512,9 +504,9 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 	retryCount := 0
 
 	for {
-		var reqId = atomic.AddUint64(&LabsRequestCounter, 1)
+		var reqId = atomic.AddUint64(&requestCounter, 1)
 
-		if logLevel >= logDebug {
+		if manager.LogLevel >= hooks.LogDebug {
 			log.Printf("[DEBUG] Request #%v: %v", reqId, url)
 		}
 
@@ -525,13 +517,13 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 
 		req.Header.Add("User-Agent", USER_AGENT)
 
-		resp, err := LabsHttpClient.Do(req)
+		resp, err := httpClient.Do(req)
 		if err == nil {
-			if logLevel >= logDebug {
+			if manager.LogLevel >= hooks.LogDebug {
 				log.Printf("[DEBUG] Response #%v status: %v %v", reqId, resp.Proto, resp.Status)
 			}
 
-			if logLevel >= logTrace {
+			if manager.LogLevel >= hooks.LogTrace {
 				for key, values := range resp.Header {
 					for _, value := range values {
 						log.Printf("[TRACE] %v: %v\n", key, value)
@@ -539,7 +531,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				}
 			}
 
-			if logLevel >= logNotice {
+			if manager.LogLevel >= hooks.LogNotice {
 				for key, values := range resp.Header {
 					if strings.ToLower(key) == "x-message" {
 						for _, value := range values {
@@ -555,15 +547,15 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 			if headerValue != "" {
 				i, err := strconv.Atoi(headerValue)
 				if err == nil {
-					if LabsCurrentAssessments != i {
-						LabsCurrentAssessments = i
+					if currentAssessments != i {
+						currentAssessments = i
 
-						if logLevel >= logDebug {
+						if manager.LogLevel >= hooks.LogDebug {
 							log.Printf("[DEBUG] Server set current assessments to %v", headerValue)
 						}
 					}
 				} else {
-					if logLevel >= logWarning {
+					if manager.LogLevel >= hooks.LogWarning {
 						log.Printf("[WARNING] Ignoring invalid X-Current-Assessments value (%v): %v", headerValue, err)
 					}
 				}
@@ -575,19 +567,19 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 			if headerValue != "" {
 				i, err := strconv.Atoi(headerValue)
 				if err == nil {
-					if LabsMaxAssessments != i {
-						LabsMaxAssessments = i
+					if maxAssessments != i {
+						maxAssessments = i
 
-						if LabsMaxAssessments <= 0 {
+						if maxAssessments <= 0 {
 							log.Fatalf("[ERROR] Server doesn't allow further API requests")
 						}
 
-						if logLevel >= logDebug {
+						if manager.LogLevel >= hooks.LogDebug {
 							log.Printf("[DEBUG] Server set maximum assessments to %v", headerValue)
 						}
 					}
 				} else {
-					if logLevel >= logWarning {
+					if manager.LogLevel >= hooks.LogWarning {
 						log.Printf("[WARNING] Ignoring invalid X-Max-Assessments value (%v): %v", headerValue, err)
 					}
 				}
@@ -602,34 +594,35 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				return nil, nil, err
 			}
 
-			if logLevel >= logTrace {
+			if manager.LogLevel >= hooks.LogTrace {
 				log.Printf("[TRACE] Response #%v body:\n%v", reqId, string(body))
 			}
 
 			return resp, body, nil
-		} else {
-			if strings.Contains(err.Error(), "EOF") {
-				// Server closed a persistent connection on us, which
-				// Go doesn't seem to be handling well. So we'll try one
-				// more time.
-				if retryCount > 5 {
-					log.Fatalf("[ERROR] Too many HTTP requests (5) failed with EOF (ref#2)")
-				}
+		}
 
-				if logLevel >= logDebug {
-					log.Printf("[DEBUG] HTTP request failed with EOF (ref#2)")
-				}
-			} else {
-				log.Fatalf("[ERROR] HTTP request failed: %v (ref#2)", err.Error())
+		if strings.Contains(err.Error(), "EOF") {
+			// Server closed a persistent connection on us, which
+			// Go doesn't seem to be handling well. So we'll try one
+			// more time.
+			if retryCount > 5 {
+				log.Fatalf("[ERROR] Too many HTTP requests (5) failed with EOF (ref#2)")
 			}
 
-			retryCount++
+			if manager.LogLevel >= hooks.LogDebug {
+				log.Printf("[DEBUG] HTTP request failed with EOF (ref#2)")
+			}
+		} else {
+			log.Fatalf("[ERROR] HTTP request failed: %v (ref#2)", err.Error())
 		}
+
+		retryCount++
+
 	}
 }
 
 func invokeApi(command string) (*http.Response, []byte, error) {
-	var url = LabsApiLocation + "/" + command
+	var url = APILocation + "/" + command
 
 	for {
 		resp, body, err := invokeGetRepeatedly(url)
@@ -647,7 +640,7 @@ func invokeApi(command string) (*http.Response, []byte, error) {
 
 			sleepTime := 60 + rand.Int31n(60)
 
-			if logLevel >= logNotice {
+			if manager.LogLevel >= hooks.LogNotice {
 				log.Printf("[NOTICE] Sleeping for %v Seconds after a %v response", sleepTime, resp.StatusCode)
 			}
 
@@ -684,14 +677,14 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 	if fromCache {
 		command = command + "&fromCache=on"
 
-		if LabsMaxAge != 0 {
-			command = command + "&maxAge=" + strconv.Itoa(LabsMaxAge)
+		if maxAge != 0 {
+			command = command + "&maxAge=" + strconv.Itoa(maxAge)
 		}
 	} else if startNew {
 		command = command + "&startNew=on"
 	}
 
-	if LabsIgnoreMismatch {
+	if ignoreMismatch {
 		command = command + "&ignoreMismatch=on"
 	}
 
@@ -712,33 +705,33 @@ func invokeAnalyze(host string, startNew bool, fromCache bool) (*LabsReport, err
 		}
 
 		return nil, apiError
-	} else {
-		// We should have a proper response.
-
-		var analyzeResponse LabsReport
-		err = json.Unmarshal(body, &analyzeResponse)
-		if err != nil {
-			log.Printf("[ERROR] JSON unmarshal error: %v", err)
-			return nil, err
-		}
-
-		// Add the JSON body to the response
-		analyzeResponse.rawJSON = string(body)
-
-		return &analyzeResponse, nil
 	}
+	// We should have a proper response.
+
+	var analyzeResponse LabsReport
+	err = json.Unmarshal(body, &analyzeResponse)
+	if err != nil {
+		log.Printf("[ERROR] JSON unmarshal error: %v", err)
+		return nil, err
+	}
+
+	// Add the JSON body to the response
+	analyzeResponse.rawJSON = string(body)
+
+	return &analyzeResponse, nil
+
 }
 
-func (manager *Manager) labsAssessment(scan internalMessage, internalChannel chan internalMessage) {
+func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
 	var report *LabsReport
 	var startTime int64 = -1
-	var startNew = LabsStartNew
+	var startNew = startNew
 
 	for {
-		myResponse, err := invokeAnalyze(scan.domain.DomainName, startNew, LabsFromCache)
+		myResponse, err := invokeAnalyze(scan.Domain.DomainName, startNew, fromCache)
 		if err != nil {
 			// TODO handle errors better
-			scan.statusCode = statusError
+			scan.StatusCode = hooks.StatusError
 			internalChannel <- scan
 			return
 		}
@@ -753,7 +746,7 @@ func (manager *Manager) labsAssessment(scan internalMessage, internalChannel cha
 			// consistent results.
 			if myResponse.StartTime > startTime {
 				// TODO handle errors better
-				scan.statusCode = statusError
+				scan.StatusCode = hooks.StatusError
 				internalChannel <- scan
 				return
 			} else {
@@ -768,19 +761,19 @@ func (manager *Manager) labsAssessment(scan internalMessage, internalChannel cha
 
 		time.Sleep(5 * time.Second)
 	}
-	scan.results = report
-	scan.statusCode = statusDone
+	scan.Results = report
+	scan.StatusCode = hooks.StatusDone
 	internalChannel <- scan
 }
 
-func (manager *Manager) labsRun() error {
+func run() error {
 	transport := &http.Transport{
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: LabsInsecure},
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: insecure},
 		DisableKeepAlives: false,
 		Proxy:             http.ProxyFromEnvironment,
 	}
 
-	LabsHttpClient = &http.Client{Transport: transport}
+	httpClient = &http.Client{Transport: transport}
 
 	// Ping SSL Labs to determine how many concurrent
 	// assessments we're allowed to use. Print the API version
@@ -792,89 +785,100 @@ func (manager *Manager) labsRun() error {
 		return err
 	}
 
-	if logLevel >= logInfo {
+	if manager.LogLevel >= hooks.LogInfo {
 		log.Printf("[INFO] SSL Labs v%v (criteria version %v)", labsInfo.EngineVersion, labsInfo.CriteriaVersion)
 	}
 
-	if logLevel >= logNotice {
+	if manager.LogLevel >= hooks.LogNotice {
 		for _, message := range labsInfo.Messages {
 			log.Printf("[NOTICE] Server message: %v", message)
 		}
 	}
 
-	LabsMaxAssessments = labsInfo.MaxAssessments
+	maxAssessments = labsInfo.MaxAssessments
 
-	if LabsMaxAssessments <= 0 {
-		if logLevel >= logWarning {
+	if maxAssessments <= 0 {
+		if manager.LogLevel >= hooks.LogWarning {
 			log.Printf("[WARNING] You're not allowed to request new assessments")
 		}
 	}
 
 	if labsInfo.NewAssessmentCoolOff >= 1000 {
-		LabsNewAssessmentCoolOff = 100 + labsInfo.NewAssessmentCoolOff
+		newAssessmentCoolOff = 100 + labsInfo.NewAssessmentCoolOff
 	} else {
-		if logLevel >= logWarning {
+		if manager.LogLevel >= hooks.LogWarning {
 			log.Printf("[WARNING] Info.NewAssessmentCoolOff too small: %v", labsInfo.NewAssessmentCoolOff)
 		}
 	}
-	LabsLastTime = time.Now()
+	lastTime = time.Now()
 	return nil
 }
 
-func (manager *Manager) labsHandleScan(domains []DomainsReachable, internalChannel chan internalMessage) []DomainsReachable {
-	for len(domains) > 0 && LabsCurrentAssessments < LabsMaxAssessments && time.Since(LabsLastTime) > time.Duration(LabsNewAssessmentCoolOff)*time.Millisecond {
+func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.InternalMessage) []hooks.DomainsReachable {
+	for len(domains) > 0 && currentAssessments < maxAssessments && time.Since(lastTime) > time.Duration(newAssessmentCoolOff)*time.Millisecond {
 		// pop fist domain
-		manager.firstScan = true
-		LabsLastTime = time.Now()
+		manager.FirstScan = true
+		lastTime = time.Now()
 		scan, retDom := domains[0], domains[1:]
-		scanMsg := internalMessage{scan, nil, 0, internalNew}
-		go manager.labsAssessment(scanMsg, internalChannel)
-		manager.status.addCurrentScans(1)
+		scanMsg := hooks.InternalMessage{
+			Domain:     scan,
+			Results:    nil,
+			Retries:    0,
+			StatusCode: hooks.InternalNew,
+		}
+		go assessment(scanMsg, internalChannel)
+		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
 	return domains
 }
 
-func (manager *Manager) labsHandleResults(result internalMessage) {
-	manager.status.addCurrentScans(-1)
-	res, ok := result.results.(*LabsReport)
+func handleResults(result hooks.InternalMessage) {
+	manager.Status.AddCurrentScans(-1)
+	res, ok := result.Results.(*LabsReport)
 	if !ok {
 		//TODO Handle Error
 		log.Print("SSLLabs manager couldn't assert type")
 		res = &LabsReport{}
-		result.statusCode = internalFatalError
+		result.StatusCode = hooks.InternalFatalError
 	}
 
 	labsRes := makeSSLLabsRow(res)
 
-	switch result.statusCode {
-	case internalFatalError:
+	switch result.StatusCode {
+	case hooks.InternalFatalError:
 		// TODO Handle Error
-		labsRes.ScanStatus = statusError
-		manager.status.addErrorScans(1)
-	case internalSuccess:
+		labsRes.ScanStatus = hooks.StatusError
+		manager.Status.AddErrorScans(1)
+	case hooks.InternalSuccess:
 		// TODO Handle Success
-		labsRes.ScanStatus = statusDone
-		manager.status.addFinishedScans(1)
+		labsRes.ScanStatus = hooks.StatusDone
+		manager.Status.AddFinishedScans(1)
 	}
-	where := ScanWhereCond{result.domain.DomainID, manager.scanID, result.domain.TestWithSSL}
-	err := saveResults(manager.getTableName(), structs.New(where), structs.New(labsRes))
-	if err != nil {
-		//TODO Handle Error
-		log.Printf("SSLLabs couldn't save results for %s: %s", result.domain.DomainName, err.Error())
-		return
-	}
+
 	certRows := makeCertificateRows(res)
-	err = saveCertificates(certRows, CertificatesTable)
+	err := backend.SaveCertificates(certRows, certificatesTable)
 	if err != nil {
 		//TODO Handle Error
-		log.Printf("SSLLabs couldn't save certificates for %s: %s", result.domain.DomainName, err.Error())
+		log.Printf("SSLLabs couldn't save certificates for %s: %s", result.Domain.DomainName, err.Error())
 		return
 	}
+
+	where := hooks.ScanWhereCond{
+		DomainID:    result.Domain.DomainID,
+		ScanID:      manager.ScanID,
+		TestWithSSL: result.Domain.TestWithSSL}
+	err = backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(labsRes))
+	if err != nil {
+		//TODO Handle Error
+		log.Printf("SSLLabs couldn't save results for %s: %s", result.Domain.DomainName, err.Error())
+		return
+	}
+
 }
 
-func makeCertificateRows(report *LabsReport) []*CertificateRow {
-	var res = []*CertificateRow{}
+func makeCertificateRows(report *LabsReport) []*hooks.CertificateRow {
+	var res = []*hooks.CertificateRow{}
 	var chainLength = len(report.Certs)
 	if len(report.Endpoints) == 0 {
 		//TODO ERROR HANDLING
@@ -882,13 +886,13 @@ func makeCertificateRows(report *LabsReport) []*CertificateRow {
 		return res
 	}
 	for i, cert := range report.Certs {
-		row := &CertificateRow{}
-		row.Thumbprint = truncate(cert.Sha1Hash, 40)
-		row.ID = truncate(cert.Id, 80)
-		row.SerialNumber = truncate(cert.SerialNumber, 100)
-		row.Subject = truncate(cert.Subject, 300)
-		row.Issuer = truncate(cert.IssuerSubject, 300)
-		row.SigAlg = truncate(cert.SigAlg, 30)
+		row := &hooks.CertificateRow{}
+		row.Thumbprint = hooks.Truncate(cert.Sha1Hash, 40)
+		row.ID = hooks.Truncate(cert.Id, 80)
+		row.SerialNumber = hooks.Truncate(cert.SerialNumber, 100)
+		row.Subject = hooks.Truncate(cert.Subject, 300)
+		row.Issuer = hooks.Truncate(cert.IssuerSubject, 300)
+		row.SigAlg = hooks.Truncate(cert.SigAlg, 30)
 		row.RevocationStatus = uint8(cert.RevocationStatus)
 		row.Issues = int16(cert.Issues)
 		row.KeyStrength = int16(cert.KeyStrength)
@@ -896,49 +900,52 @@ func makeCertificateRows(report *LabsReport) []*CertificateRow {
 		row.NotAfter = cert.NotAfter
 		row.NotBefore = cert.NotBefore
 		if i+1 < chainLength {
-			row.NextThumbprint = truncate(report.Certs[i+1].Sha1Hash, 40)
+			row.NextThumbprint = sql.NullString{
+				String: hooks.Truncate(report.Certs[i+1].Sha1Hash, 40),
+				Valid:  true,
+			}
 		}
 
-		res = append(res, row)
+		res = append([]*hooks.CertificateRow{row}, res...)
 	}
 	return res
 }
 
-func makeSSLLabsRow(report *LabsReport) *SSLLabsTableRow {
+func makeSSLLabsRow(report *LabsReport) *TableRow {
 	var helpInt int
 	var helpStr string
 	if len(report.Endpoints) == 0 {
 		//TODO ERROR HANDLING
 		fmt.Sprintln("No Endpoints in the report!")
-		return &SSLLabsTableRow{}
+		return &TableRow{}
 	}
 	endpoint := report.Endpoints[0]
 	details := endpoint.Details
-	row := &SSLLabsTableRow{}
-	row.IP = truncate(endpoint.IpAddress, 15)
+	row := &TableRow{}
+	row.IP = hooks.Truncate(endpoint.IpAddress, 15)
 	row.StartTime = report.StartTime
 	row.TestTime = report.TestTime
-	row.Grade = truncate(endpoint.Grade, 2)
-	row.GradeTrustIgnored = truncate(endpoint.GradeTrustIgnored, 2)
-	row.FutureGrade = truncate(endpoint.FutureGrade, 2)
+	row.Grade = hooks.Truncate(endpoint.Grade, 2)
+	row.GradeTrustIgnored = hooks.Truncate(endpoint.GradeTrustIgnored, 2)
+	row.FutureGrade = hooks.Truncate(endpoint.FutureGrade, 2)
 	row.HasWarnings = endpoint.HasWarnings
 	row.IsExceptional = endpoint.IsExceptional
 
 	helpStr, helpInt = getProtocols(details, true)
 	row.NumberWeakProtocols = helpInt
-	row.WeakProtocols = truncate(helpStr, 50)
+	row.WeakProtocols = hooks.Truncate(helpStr, 50)
 
 	helpStr, helpInt = getProtocols(details, false)
 	row.NumberProtocols = helpInt
-	row.Protocols = truncate(helpStr, 50)
+	row.Protocols = hooks.Truncate(helpStr, 50)
 
 	helpStr, helpInt = getSuites(details, true)
 	row.NumberWeakSuites = helpInt
-	row.WeakSuites = truncate(helpStr, 2000)
+	row.WeakSuites = hooks.Truncate(helpStr, 2000)
 
 	helpStr, helpInt = getSuites(details, false)
 	row.NumberSuites = helpInt
-	row.Suites = truncate(helpStr, 4000)
+	row.Suites = hooks.Truncate(helpStr, 4000)
 
 	row.ForwardSecrecy = uint8(details.ForwardSecrecy)
 	row.RenegSupport = uint8(details.RenegSupport)
@@ -961,7 +968,7 @@ func makeSSLLabsRow(report *LabsReport) *SSLLabsTableRow {
 		row.CertificateChainLength = uint8(len(details.CertChains[0].CertIds))
 	}
 	if len(report.Certs) != 0 {
-		row.BaseCertificateThumbprint = truncate(report.Certs[0].Sha1Hash, 40)
+		row.BaseCertificateThumbprint = hooks.Truncate(report.Certs[0].Sha1Hash, 40)
 	}
 
 	return row
@@ -1004,4 +1011,53 @@ func getSuites(details LabsEndpointDetails, weak bool) (string, int) {
 		str2 = []string{}
 	}
 	return strings.Join(str, "; "), i
+}
+
+func flagSetUp() {
+	used = flag.Bool("no-ssllabs", false, "Don't use the SSLLabs-Scan")
+	maxRetries = flag.Int("labs-retries", 1, "Number of retries for the sslLabs-Scan")
+}
+
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+	currentScan.SSLLabs = !*used
+	currentScan.SSLLabsVersion = manager.Version
+	if !*used {
+		if manager.MaxParallelScans != 0 {
+			manager.MaxRetries = *maxRetries
+			manager.OutputChannel = channel
+			return true
+		}
+	}
+	return false
+}
+
+func continueScan(scan hooks.ScanRow) bool {
+	if manager.Version != scan.SSLLabsVersion {
+		return false
+	}
+	return true
+}
+
+func setUp() {
+	if run() != nil {
+		// TODO Handle Error
+		panic(fmt.Errorf("SSLLabs set up failed"))
+	}
+}
+
+func init() {
+	hooks.ManagerMap[manager.Table] = &manager
+
+	hooks.FlagSetUp[manager.Table] = flagSetUp
+
+	hooks.ConfigureSetUp[manager.Table] = configureSetUp
+
+	hooks.ContinueScan[manager.Table] = continueScan
+
+	hooks.ManagerSetUp[manager.Table] = setUp
+
+	hooks.ManagerHandleScan[manager.Table] = handleScan
+
+	hooks.ManagerHandleResults[manager.Table] = handleResults
+
 }

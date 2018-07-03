@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"./hooks"
 )
 
 // Tests if a URL is reachable over HTTPS oder HTTP
@@ -51,20 +53,20 @@ func testHTTP(host string) bool {
 	return true
 }
 
-func testSSL(domain DomainsRow, channel chan ScanData) {
-	var result ScanData
+func testSSL(domain hooks.DomainsRow, channel chan hooks.ScanData) {
+	var result hooks.ScanData
 	result.DomainID = domain.DomainID
 	result.DomainReachable = testHost(domain.DomainName)
 	channel <- result
 }
 
 // test Reachability of domains. Return unreachable Info and
-func runSSLTest(domains []DomainsRow, scan ScanRow) ([]ScanData, ScanRow, error) {
+func runSSLTest(domains []hooks.DomainsRow, scan hooks.ScanRow) ([]hooks.ScanData, hooks.ScanRow, error) {
 	currentDomain, domains := domains[0], domains[1:]
-	sslChannel := make(chan ScanData)
+	sslChannel := make(chan hooks.ScanData)
 	currentScans := 0
 	maxScans := 20
-	var scanData []ScanData
+	var scanData []hooks.ScanData
 	var err error
 L:
 	for {
