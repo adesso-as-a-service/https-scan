@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"time"
 
 	"./hooks"
 )
+
+var sslLogger = log.New(hooks.LogWriter, "SSLTest\t", log.Ldate|log.Ltime)
 
 // Tests if a URL is reachable over HTTPS oder HTTP
 // 0 unreachable
@@ -32,8 +35,9 @@ func testHTTPS(host string) bool {
 	timeOut := time.Duration(seconds) * time.Second
 	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
 	if err != nil {
-		//ADD Logging
-		fmt.Println(err)
+		if logLevel >= hooks.LogDebug {
+			sslLogger.Printf("[DEBUG] Timeout dialing port 443: %v", err)
+		}
 		return false
 	}
 	return true
@@ -46,9 +50,11 @@ func testHTTP(host string) bool {
 	timeOut := time.Duration(seconds) * time.Second
 	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
 	if err != nil {
-		//AddLogging
-		fmt.Println(err)
+		if logLevel >= hooks.LogDebug {
+			sslLogger.Printf("[DEBUG] Timeout dialing port 80: %v", err)
+		}
 		return false
+
 	}
 	return true
 }
@@ -77,7 +83,6 @@ L:
 				scanData = append(scanData, res)
 			} else {
 				scan.Unreachable++
-				//TODO log unreachable domain
 			}
 			currentScans--
 		case <-time.After(120 * time.Second):

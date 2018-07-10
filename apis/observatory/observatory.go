@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -70,7 +71,7 @@ type TableRow struct {
 }
 
 // maximum Number of parallel Scans
-var maxScans int = 10
+var maxScans int = 5
 
 // crawlerVersion
 var version = "10"
@@ -79,12 +80,14 @@ var used *bool
 
 var maxRetries *int
 
+var logger *log.Logger
+
 var manager = hooks.Manager{
 	MaxRetries:       3,        //Max Retries
 	MaxParallelScans: maxScans, //Max parallel Scans
 	Version:          version,
 	Table:            "Observatory",             //Table name
-	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
+	ScanType:         hooks.ScanOnePreferSSL,    // Scan HTTP or HTTPS
 	OutputChannel:    nil,                       //output channel
 	LogLevel:         hooks.LogNotice,           //loglevel
 	Status:           hooks.ScanStatus{},        // initial scanStatus
@@ -294,16 +297,12 @@ func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 	apiURL := "https://http-observatory.security.mozilla.org/api/v1/analyze?host=" + host
 	var analyzeResult AnalyzeResult
 
-	if manager.LogLevel >= hooks.LogInfo {
-		log.Printf("[INFO] Getting observatory analyzation: %v", host)
-	}
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Getting observatory analyzation: %v", host), manager.LogLevel, hooks.LogTrace)
 
 	// Initiate the scan request, the body of the request contains information to hide the scan from the front-page
 	_, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader("hidden=true&rescan=false"))
 	if err != nil {
-		if manager.LogLevel >= hooks.LogError {
-			log.Printf("[ERROR] Error invoking observatory API for %v : %v", host, err)
-		}
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error invoking observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogDebug)
 		return AnalyzeResult{}, err
 	}
 
@@ -311,9 +310,7 @@ func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 	for {
 		response, err := http.Get(apiURL)
 		if err != nil {
-			if manager.LogLevel >= hooks.LogError {
-				log.Printf("[ERROR] Error polling observatory API for %v : %v", host, err)
-			}
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
 			return AnalyzeResult{}, err
 		}
 		defer response.Body.Close()
@@ -321,36 +318,23 @@ func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 		err = json.Unmarshal(analyzeBody, &analyzeResult)
 
 		if err != nil {
-			if manager.LogLevel >= hooks.LogError {
-				log.Printf("[ERROR] Error unmarshalling: %v", err)
-			}
-		}
-		if manager.LogLevel >= hooks.LogDebug {
-			log.Printf("[DEBUG] Observatory Scan is currently %v for host: %v", analyzeResult.State, host)
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling analyzeBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return AnalyzeResult{}, err
 		}
 		switch analyzeResult.State {
 		case "FINISHED":
 			return analyzeResult, nil
 		case "ABORTED":
 			observatoryStateError := errors.New("Observatory scan aborted for technical reasons at observatory API")
-			if manager.LogLevel >= hooks.LogError {
-				log.Printf("[ERROR] Observatory scan failed for host %v", host)
-			}
 			return AnalyzeResult{}, observatoryStateError
 		case "FAILED":
 			observatoryStateError := errors.New("Failed to request observatory scan")
-			if manager.LogLevel >= hooks.LogError {
-				log.Printf("[ERROR] Observatory scan failed for host %v", host)
-			}
 			return AnalyzeResult{}, observatoryStateError
 		case "PENDING", "RUNNING", "STARTING":
 			time.Sleep(5 * time.Second)
 			continue
 		default:
 			observatoryStateError := errors.New("Could not request observatory scan")
-			if manager.LogLevel >= hooks.LogError {
-				log.Printf("[ERROR] Error getting Observatory state for host %v", host)
-			}
 			return AnalyzeResult{}, observatoryStateError
 		}
 	}
@@ -362,42 +346,55 @@ func invokeObservatoryResults(analyzeResults AnalyzeResult) (ScanResults, error)
 	var scanResults ScanResults
 	// Getting the results of an unfinished scan won't work -- abort
 	if analyzeResults.State != "FINISHED" {
-		if manager.LogLevel >= hooks.LogError {
-			log.Printf("[ERROR] Analysis not finished but tried to get results")
-		}
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Tried accessing results before the scan finished"), manager.LogLevel, hooks.LogWarning)
 		return ScanResults{}, errors.New("Invoked results without finished analysis")
 	}
 
 	resultApiUrl := "https://http-observatory.security.mozilla.org/api/v1/getScanResults?scan=" + strconv.Itoa(analyzeResults.ScanID)
 	response, err := http.Get(resultApiUrl)
 	if err != nil {
-		if manager.LogLevel >= hooks.LogError {
-			log.Printf("[ERROR] Error invoking observatory API for current host: %v", err)
-		}
 		return ScanResults{}, err
 	}
 	resultsBody, err := ioutil.ReadAll(response.Body)
 	// Since we're getting a JSON as a response, unmarshal it into a new ObservatoryScanResults object
 	// And add it to our calling LabsReport-Object
-	json.Unmarshal(resultsBody, &scanResults)
+	err = json.Unmarshal(resultsBody, &scanResults)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling results: %v", err), manager.LogLevel, hooks.LogWarning)
+		return ScanResults{}, err
+	}
 	return scanResults, nil
 }
 
 func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.InternalMessage) []hooks.DomainsReachable {
-	for len(domains) > 0 && int(manager.Status.GetCurrentScans()) < manager.MaxParallelScans {
+	for (len(manager.Errors) > 0 || len(domains) > 0) && int(manager.Status.GetCurrentScans()) < manager.MaxParallelScans {
 		manager.FirstScan = true
+		var scanMsg hooks.InternalMessage
+		var retDom = domains
+		var scan hooks.DomainsReachable
 		// pop fist domain
-		scan, retDom := domains[0], domains[1:]
-		scanMsg := hooks.InternalMessage{
-			Domain:     scan,
-			Results:    nil,
-			Retries:    0,
-			StatusCode: hooks.InternalNew,
+		if manager.CheckDoError() && len(manager.Errors) != 0 {
+			scanMsg, manager.Errors = manager.Errors[0], manager.Errors[1:]
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying failed assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+		} else if len(domains) != 0 {
+			scan, retDom = domains[0], domains[1:]
+			scanMsg = hooks.InternalMessage{
+				Domain:     scan,
+				Results:    nil,
+				Retries:    0,
+				StatusCode: hooks.InternalNew,
+			}
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Trying new assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+		} else {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+			return domains
 		}
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Started assessment for %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
 		go assessment(scanMsg, internalChannel)
 		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
 	return domains
 }
 
@@ -507,10 +504,9 @@ func parseResult(obsResult ScanResults, obsAnaly AnalyzeResult) TableRow {
 func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
 	analyze, err := invokeObservatoryAnalyzation(scan.Domain.DomainName)
 	if err != nil {
-		//TODO Handle Error
-		log.Printf("Observatory couldn't get Results for %d: %s", scan.Domain.DomainID, err.Error())
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't start scan for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		scan.Results = TableRow{}
-		scan.StatusCode = hooks.InternalFatalError
+		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
 		return
 	}
@@ -518,10 +514,9 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 	results, err := invokeObservatoryResults(analyze)
 
 	if err != nil {
-		//TODO Handle Error
-		log.Printf("Observatory couldn't get Results for %d: %s", scan.Domain.DomainID, err.Error())
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't get results from API for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		scan.Results = TableRow{}
-		scan.StatusCode = hooks.InternalFatalError
+		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
 		return
 	}
@@ -535,13 +530,10 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 
 func handleResults(result hooks.InternalMessage) {
 	res, ok := result.Results.(TableRow)
-	//TODO FIX with error handling
 	manager.Status.AddCurrentScans(-1)
 
 	if !ok {
-		//TODO Handle Error
-
-		log.Print("observatory manager couldn't assert type")
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't assert type of result for  %v", result.Domain.DomainName), manager.LogLevel, hooks.LogError)
 		res = TableRow{}
 		result.StatusCode = hooks.InternalFatalError
 	}
@@ -549,8 +541,11 @@ func handleResults(result hooks.InternalMessage) {
 	switch result.StatusCode {
 	case hooks.InternalFatalError:
 		res.ScanStatus = hooks.StatusError
-		manager.Status.AddErrorScans(1)
+		manager.Status.AddFatalErrorScans(1)
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v failed ultimately", result.Domain.DomainName), manager.LogLevel, hooks.LogInfo)
+
 	case hooks.InternalSuccess:
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v was successful", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
 		res.ScanStatus = hooks.StatusDone
 		manager.Status.AddFinishedScans(1)
 	}
@@ -560,10 +555,10 @@ func handleResults(result hooks.InternalMessage) {
 		TestWithSSL: result.Domain.TestWithSSL}
 	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
-		//TODO Handle Error
-		log.Printf("observatory couldn't save results for %s: %s", result.Domain.DomainName, err.Error())
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't save results for %v: %v", result.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		return
 	}
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Results for %v saved", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
 }
 
 func flagSetUp() {
@@ -595,6 +590,10 @@ func setUp() {
 
 }
 
+func setUpLogger() {
+	manager.Logger = log.New(hooks.LogWriter, "Observa\t", log.Ldate|log.Ltime)
+}
+
 func init() {
 	hooks.ManagerMap[manager.Table] = &manager
 
@@ -610,4 +609,5 @@ func init() {
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
+	setUpLogger()
 }

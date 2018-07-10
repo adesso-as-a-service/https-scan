@@ -1,8 +1,7 @@
 {
-    "SqlServer": "",
-    "SqlUserId": "",
-    "SqlPassword": "",
-    "SqlDatabase  ": "",
-    "SqlEncryption": "",
-    "SqlTable": ""
+    "SQLServer": "",
+    "SQLUserID": "",
+    "SQLPassword": "",
+    "SQLDatabase": "",
+    "SQLEncryption": ""
 }

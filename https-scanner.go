@@ -25,6 +25,9 @@ import (
 // logLevel sets the global verbosity of thr Logging
 var logLevel int
 
+var logger = log.New(hooks.LogWriter, "Control\t", log.Ldate|log.Ltime)
+var infoLogger = log.New(hooks.LogWriter, "", 0)
+
 // parseLogLevel returns the loglevel corresponding to a string
 func parseLogLevel(level string) int {
 	switch {
@@ -40,7 +43,7 @@ func parseLogLevel(level string) int {
 		return hooks.LogTrace
 	}
 
-	log.Fatalf("[ERROR] Unrecognized log level: %v", level)
+	logger.Fatalf("[ERROR] Unrecognized log level: %v", level)
 	return -1
 }
 func getTablenames(usedManagers []string) []string {
@@ -59,11 +62,12 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	if err != nil {
 		return scan, err
 	}
+	infoLogger.Printf("---------------------------------------------------------------------------------------------------\nStarting Scan with ScanID %d\n---------------------------------------------------------------------------------------------------", scan.ScanID)
 	domains, err := backend.GetDomains()
 	if err != nil {
 		return scan, err
 	}
-	scanData, scan, err := runSSLTest(domains, scan)
+	scanData, scan, err := runSSLTest(domains[:100], scan)
 	if err != nil {
 		return scan, err
 	}
@@ -93,6 +97,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if len(broken) != 0 {
 		err = fmt.Errorf("The version for the following Scans have changed in the meantime: %s! Please start a new Scan", strings.Join(broken, ", "))
 	}
+	infoLogger.Printf("---------------------------------------------------------------------------------------------------\nContinueing Scan with ScanID %d\n---------------------------------------------------------------------------------------------------", scan.ScanID)
 	return scan, err
 }
 
@@ -104,7 +109,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 func main() {
 	// Read input arguments
 	var confVerbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace.")
-	var confContinue = flag.Int("continue", 0, "continue Scan after error")
+	var confContinue = flag.Int("continue", 0, "continue Scan with given ID after error (-1 for latest scan) ")
 
 	// setUp Input Arguments for apis
 	for _, f := range hooks.FlagSetUp {
@@ -121,6 +126,10 @@ func main() {
 
 	// configure managers
 	logLevel = parseLogLevel(*confVerbosity)
+	// set log level for all managers
+	for _, man := range hooks.ManagerMap {
+		man.LogLevel = logLevel
+	}
 
 	// create output channel
 	outputChannel := make(chan hooks.ScanStatusMessage)
@@ -136,14 +145,14 @@ func main() {
 
 	config, err := backend.ReadSQLConfig("sql_config.json")
 	if err != nil {
-		panic(fmt.Sprintf("Error occurred while reading the config-file 'sql_config.json': %v", err))
+		logger.Fatalf("Error occurred while reading the config-file 'sql_config.json': %v", err)
 	}
-	fmt.Printf("Reading SQL Config completed")
+	infoLogger.Println("Reading SQL Config completed")
 
 	// Opening Database
 	err = backend.OpenDatabase(config)
 	if err != nil {
-		panic(fmt.Sprintf("Error occurred while opening the database: %v", err))
+		logger.Fatalf("Error occurred while opening the database: %v", err)
 	}
 
 	if *confContinue == 0 {
@@ -156,8 +165,7 @@ func main() {
 
 	}
 	if err != nil {
-		panic(fmt.Sprintf("Error occurred while initializing Scan: %v", err))
-		//TODO ErrorHandling
+		logger.Fatalf("Error occurred while initializing Scan: %v", err)
 	}
 
 	// start ui
@@ -174,10 +182,10 @@ scan:
 		select {
 		case msg := <-outputChannel:
 			if msg.Status != nil {
-				fmt.Printf("%s: Running: %d Remaining: %d, Errors: %d\n", msg.Sender, msg.Status.GetCurrentScans(), msg.Status.GetTotalScans()-msg.Status.GetFinishedScans()-msg.Status.GetErrorScans(), msg.Status.GetErrorScans())
+				hooks.LogIfNeeded(logger, fmt.Sprintf("Received status message from %v", msg.Sender), logLevel, hooks.LogDebug)
 				timeout[msg.Sender] = time.Now()
 			} else {
-				fmt.Printf("%s is done\n", msg.Sender)
+				hooks.LogIfNeeded(logger, fmt.Sprintf("Received 'finished' message from %v", msg.Sender), logLevel, hooks.LogDebug)
 				finished[msg.Sender] = true
 			}
 		case <-updateTime:
@@ -185,12 +193,12 @@ scan:
 			for _, manager := range usedManagers {
 				allDone = allDone && finished[manager]
 				if !finished[manager] && time.Since(timeout[manager]) > time.Duration(5*apis.StatusTime)*time.Second {
-					panic(fmt.Sprintf("%s is unreachable, with %d scans remaining\n", manager, hooks.ManagerMap[manager].Status.GetTotalScans()-hooks.ManagerMap[manager].Status.GetFinishedScans()-hooks.ManagerMap[manager].Status.GetErrorScans()))
+					logger.Fatalf("Manager %s has been unreachable fo %d seconds", manager, 5*apis.StatusTime)
 				}
 
 			}
 			if allDone {
-				fmt.Printf("Scan is done\n")
+				infoLogger.Printf("---------------------------------------------------------------------------------------------------\nScan with ScanID %d is done\n---------------------------------------------------------------------------------------------------", currentScan.ScanID)
 				break scan
 			}
 		}

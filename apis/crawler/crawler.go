@@ -55,7 +55,6 @@ var manager = hooks.Manager{
 }
 
 func getBaseURL(myURL string) string {
-	//TODO ERROR HANDLING
 	u, _ := url.Parse(myURL)
 	u.Path = ""
 	u.RawQuery = ""
@@ -81,8 +80,6 @@ func openURL(myURL string) (TableRow, error) {
 	for i < maxRedirects {
 		resp, err := client.Head(myURL)
 		if err != nil && err != http.ErrUseLastResponse {
-			fmt.Printf("Something wrong here %s\n", myURL)
-			//TODO error handling
 			return results, err
 		}
 		urls = append(urls, myURL)
@@ -114,32 +111,44 @@ func openURL(myURL string) (TableRow, error) {
 }
 
 func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.InternalMessage) []hooks.DomainsReachable {
-	for len(domains) > 0 && int(manager.Status.GetCurrentScans()) < manager.MaxParallelScans {
+	for (len(manager.Errors) > 0 || len(domains) > 0) && int(manager.Status.GetCurrentScans()) < manager.MaxParallelScans {
 		manager.FirstScan = true
+		var scanMsg hooks.InternalMessage
+		var retDom = domains
+		var scan hooks.DomainsReachable
 		// pop fist domain
-		scan, retDom := domains[0], domains[1:]
-		scanMsg := hooks.InternalMessage{
-			Domain:     scan,
-			Results:    nil,
-			Retries:    0,
-			StatusCode: hooks.InternalNew,
+		if manager.CheckDoError() && len(manager.Errors) != 0 {
+			scanMsg, manager.Errors = manager.Errors[0], manager.Errors[1:]
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying failed assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+		} else if len(domains) != 0 {
+
+			scan, retDom = domains[0], domains[1:]
+			scanMsg = hooks.InternalMessage{
+				Domain:     scan,
+				Results:    nil,
+				Retries:    0,
+				StatusCode: hooks.InternalNew,
+			}
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Trying new assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+		} else {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+			return domains
 		}
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Started assessment for %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
 		go assessment(scanMsg, internalChannel)
 		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("no new Assessment started"), manager.LogLevel, hooks.LogTrace)
 	return domains
 }
 
 func handleResults(result hooks.InternalMessage) {
 	res, ok := result.Results.(TableRow)
-	//TODO FIX with error handling
 	manager.Status.AddCurrentScans(-1)
 
 	if !ok {
-		//TODO Handle Error
-
-		log.Print("crawler manager couldn't assert type")
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't assert type of result for  %v", result.Domain.DomainName), manager.LogLevel, hooks.LogError)
 		res = TableRow{}
 		result.StatusCode = hooks.InternalFatalError
 	}
@@ -147,9 +156,11 @@ func handleResults(result hooks.InternalMessage) {
 	switch result.StatusCode {
 	case hooks.InternalFatalError:
 		res.ScanStatus = hooks.StatusError
-		manager.Status.AddErrorScans(1)
+		manager.Status.AddFatalErrorScans(1)
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v failed ultimately", result.Domain.DomainName), manager.LogLevel, hooks.LogInfo)
 	case hooks.InternalSuccess:
 		res.ScanStatus = hooks.StatusDone
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v was successful", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
 		manager.Status.AddFinishedScans(1)
 	}
 	where := hooks.ScanWhereCond{
@@ -158,10 +169,11 @@ func handleResults(result hooks.InternalMessage) {
 		TestWithSSL: result.Domain.TestWithSSL}
 	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
-		//TODO Handle Error
-		log.Printf("crawler couldn't save results for %s: %s", result.Domain.DomainName, err.Error())
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't save results for %v: %v", result.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		return
 	}
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Results for %v saved", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+
 }
 
 func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
@@ -174,10 +186,9 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 	row, err := openURL(url)
 	//Ignore mismatch
 	if err != nil {
-		//TODO Handle Error
-		log.Printf("crawler couldn't get for %d: %s", scan.Domain.DomainID, err.Error())
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		scan.Results = row
-		scan.StatusCode = hooks.InternalFatalError
+		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
 		return
 	}
@@ -215,6 +226,10 @@ func setUp() {
 
 }
 
+func setUpLogger() {
+	manager.Logger = log.New(hooks.LogWriter, "Crawler\t", log.Ldate|log.Ltime)
+}
+
 func init() {
 	hooks.ManagerMap[manager.Table] = &manager
 
@@ -229,5 +244,7 @@ func init() {
 	hooks.ManagerHandleScan[manager.Table] = handleScan
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
+
+	setUpLogger()
 
 }

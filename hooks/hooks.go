@@ -2,7 +2,14 @@ package hooks
 
 import (
 	"database/sql"
+	"io"
+	"io/ioutil"
+	"log"
+	"math/rand"
+	"os"
+	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // shared Structs
@@ -10,10 +17,11 @@ import (
 
 // ScanStatus with atomic access
 type ScanStatus struct {
-	CurrentScans  int32
-	TotalScans    int32
-	ErrorScans    int32
-	FinishedScans int32
+	CurrentScans    int32
+	TotalScans      int32
+	ErrorScans      int32
+	FatalErrorScans int32
+	FinishedScans   int32
 }
 
 // ScanStatusMessage with atomic access
@@ -118,6 +126,7 @@ type Manager struct {
 	ScanID           int
 	Errors           []InternalMessage
 	FirstScan        bool
+	Logger           *log.Logger
 }
 
 // DomainsReachable is the base type for receiving the domains which should be scanned
@@ -187,6 +196,14 @@ func (status *ScanStatus) GetTotalScans() int32 {
 	return atomic.LoadInt32(&status.TotalScans)
 }
 
+func (status *ScanStatus) AddFatalErrorScans(val int32) {
+	atomic.AddInt32(&status.FatalErrorScans, val)
+}
+
+func (status *ScanStatus) GetFatalErrorScans() int32 {
+	return atomic.LoadInt32(&status.FatalErrorScans)
+}
+
 func Truncate(str string, trLen int) string {
 	if len(str) > trLen {
 		return str[:trLen]
@@ -217,6 +234,16 @@ var ManagerHandleScan map[string]func([]DomainsReachable, chan InternalMessage) 
 // ManagerHandleResults contains all the API-hooks to the individual functions processing the incoming results
 var ManagerHandleResults map[string]func(InternalMessage)
 
+var LogWriter io.Writer
+
+var LogLevel int
+
+// CheckDoError returns true if an error should be retried next
+func (manager *Manager) CheckDoError() bool {
+	errorRate := float64(len(manager.Errors)) / float64((int(manager.Status.GetCurrentScans()) + len(manager.Errors)))
+	return rand.Float64() < errorRate
+}
+
 func init() {
 	FlagSetUp = make(map[string]func())
 	ConfigureSetUp = make(map[string]func(*ScanRow, chan ScanStatusMessage) bool)
@@ -225,4 +252,66 @@ func init() {
 	ManagerSetUp = make(map[string]func())
 	ManagerHandleScan = make(map[string]func([]DomainsReachable, chan InternalMessage) []DomainsReachable)
 	ManagerHandleResults = make(map[string]func(InternalMessage))
+	buildLoggers()
+}
+
+// Logs a message with logger, if messageLogLevel is smaller than the current loglevel
+func LogIfNeeded(logger *log.Logger, message string, logLevel int, messageLogLevel int) {
+	if logLevel >= messageLogLevel {
+		switch messageLogLevel {
+		case LogEmerg:
+			logger.Panicf("[EMERG] %s", message)
+		case LogAlert:
+			logger.Panicf("[ALERT] %s", message)
+		case LogCritical:
+			logger.Panicf("[CRITICAL] %s", message)
+		case LogError:
+			logger.Printf("[ERROR] %s", message)
+		case LogWarning:
+			logger.Printf("[WARNING] %s", message)
+		case LogNotice:
+			logger.Printf("[NOTICE] %s", message)
+		case LogInfo:
+			logger.Printf("[INFO] %s", message)
+		case LogDebug:
+			logger.Printf("[DEBUG] %s", message)
+		case LogTrace:
+			logger.Printf("[TRACE] %s", message)
+		default:
+			logger.Printf("[UNKNOWN] %s", message)
+		}
+
+	}
+}
+
+// creates all loggers for every Manager
+func buildLoggers() {
+	// Create Directory
+	if _, err := os.Stat("log"); os.IsNotExist(err) {
+		os.Mkdir("log", 0700)
+	}
+
+	// Create Log-file
+	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
+	if err != nil {
+		LogWriter = os.Stdout
+	}
+	LogWriter = io.MultiWriter(file, os.Stdout)
+
+	files, err := ioutil.ReadDir("log")
+
+	if err != nil {
+		log.Printf("ERROR opening directory log: %v", err)
+	}
+
+	countFiles := 0
+	for i := 0; i < len(files); i++ {
+		file := files[len(files)-1-i]
+		if strings.HasSuffix(file.Name(), ".log") {
+			countFiles++
+			if countFiles > 3 {
+				os.Remove("log/" + file.Name())
+			}
+		}
+	}
 }
