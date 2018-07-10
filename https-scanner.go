@@ -67,7 +67,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	if err != nil {
 		return scan, err
 	}
-	scanData, scan, err := runSSLTest(domains[:100], scan)
+	scanData, scan, err := runSSLTest(domains, scan)
 	if err != nil {
 		return scan, err
 	}
