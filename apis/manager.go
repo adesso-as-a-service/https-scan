@@ -80,7 +80,7 @@ func receiveScans(manager *hooks.Manager, restart bool) []hooks.DomainsReachable
 
 // sendStatusMessage sends status message to the conroller
 func sendStatusMessage(manager *hooks.Manager) {
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Running: %d    Retrying: %d    Failed:%d    Remaining: %d    ", manager.Status.GetCurrentScans(), manager.Status.GetErrorScans(), manager.Status.GetFatalErrorScans(), manager.Status.GetTotalScans()-manager.Status.GetFinishedScans()), manager.LogLevel, hooks.LogInfo)
+	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Running: %5d    Retrying: %5d    Failed:%5d    Remaining: %5d    ", manager.Status.GetCurrentScans(), manager.Status.GetErrorScans(), manager.Status.GetFatalErrorScans(), manager.Status.GetTotalScans()-manager.Status.GetFinishedScans()), manager.LogLevel, hooks.LogInfo)
 	var mes = hooks.ScanStatus{
 		CurrentScans:    manager.Status.GetCurrentScans(),
 		ErrorScans:      manager.Status.GetErrorScans(),

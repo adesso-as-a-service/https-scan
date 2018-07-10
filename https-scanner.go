@@ -1,5 +1,3 @@
-// +build go1.3
-
 /*
  * Includes modified parts from Qualys, Inc. (QUALYS)s ssllabs-scan.
  * ssllabs-scan is released under the the Apache License, Version 2.0
