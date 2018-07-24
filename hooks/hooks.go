@@ -30,7 +30,7 @@ type ScanStatusMessage struct {
 	Sender string
 }
 
-// InternalMessage
+// InternalMessage is a struct used by all scan-apis to communicate in one scan-api
 type InternalMessage struct {
 	Domain     DomainsReachable
 	Results    interface{}
@@ -39,10 +39,14 @@ type InternalMessage struct {
 }
 
 const (
+	// InternalFatalError is a error, which will not be retried
 	InternalFatalError = -1
-	InternalError      = 0
-	InternalSuccess    = 1
-	InternalNew        = 2
+	// InternalError is a error, which will  be retried
+	InternalError = 0
+	// InternalSuccess signals that a scan was successful
+	InternalSuccess = 1
+	// InternalNew defines a new scan
+	InternalNew = 2
 )
 
 // Diffrent Log-Levels
@@ -76,6 +80,7 @@ const (
 	ScanOnePreferHTTP = 5
 )
 
+// StatusValues for the SQL-Table
 const (
 	StatusError   = 255
 	StatusPending = 0
@@ -144,6 +149,7 @@ type ScanWhereCond struct {
 	TestWithSSL bool
 }
 
+// CertificateRow contins all the stored information of an entry in the Certificates-Table
 type CertificateRow struct {
 	Thumbprint       string
 	ID               string

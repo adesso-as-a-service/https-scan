@@ -48,6 +48,7 @@ func parseLogLevel(level string) int {
 	logger.Fatalf("[ERROR] Unrecognized log level: %v", level)
 	return -1
 }
+
 func getTablenames(usedManagers []string) []string {
 	var result []string
 	for _, manager := range usedManagers {
@@ -57,7 +58,7 @@ func getTablenames(usedManagers []string) []string {
 	return result
 }
 
-// continueScan continues the Scan if possible
+// initializeScan starts the scan specified in the hooks.ScanRow parameter
 func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, error) {
 	var err error
 	scan, err = backend.InsertNewScan(scan)
@@ -108,6 +109,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	return scan, err
 }
 
+// conflictAdd handles adding conflicting entries to a ListID
 func conflictAdd(domains []string, list string) error {
 	conflicts := backend.GetConflictingDomains(domains, list)
 	domainStruct := make([]hooks.DomainsRowMetaInfo, 0, len(domains))
@@ -152,6 +154,7 @@ func conflictAdd(domains []string, list string) error {
 	return backend.UpdateDomainsFull(domainStruct)
 }
 
+// parseSettings parses the command line flags and performs the corresponding tasks
 func parseSettings(list string, file string, domain string, scan bool, add bool, remove bool, inactive bool, active bool) (bool, error) {
 	if add && remove {
 		return false, fmt.Errorf("Can't -remove and -add at the same time")
@@ -301,27 +304,22 @@ func parseSettings(list string, file string, domain string, scan bool, add bool,
 
 }
 
-// Configure scan (Restart/Continue, Select settings(overwrite default), Select scans)
-// OpenDatabase
-// Monitor Scans (UI)
-// run ssltest
-// Log better
 func main() {
 	// Read input arguments
-	var confVerbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace.")
-	var confContinue = flag.Bool("continue", false, "Continue the last scan ")
+	var confVerbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace")
+	var confContinue = flag.Bool("continue", false, "Continue the last scan")
 
-	var confList = flag.String("list", "", "Specify a ListID for domains.")
-	var confFile = flag.String("file", "", "Specify a file to be read for domains.")
-	var confDomain = flag.String("domain", "", "Specify a single domain.")
+	var confList = flag.String("list", "", "Specify a ListID")
+	var confFile = flag.String("file", "", "Specify a file containing multiple domains (separated by linebreak)")
+	var confDomain = flag.String("domain", "", "Specify a single domain")
 
-	var confScan = flag.Bool("scan", false, "Scan with given ListID, file or domain")
-	var confAdd = flag.Bool("add", false, "Add given  file or domain to specified list")
-	var confRemove = flag.Bool("remove", false, "Remove given file or domain from specified list")
-	var confInactive = flag.Bool("inactive", false, "Set given file or domain to inactive")
-	var confActive = flag.Bool("active", false, "Set given file or domain to active")
+	var confScan = flag.Bool("scan", false, "Scan the given domains")
+	var confAdd = flag.Bool("add", false, "Add the given domains to the specified ListID")
+	var confRemove = flag.Bool("remove", false, "Remove the given domains from the specified ListID")
+	var confInactive = flag.Bool("inactive", false, "Set the given domains to inactive (only active domains are scanned)")
+	var confActive = flag.Bool("active", false, "Set the given domains to active (only active domains are scanned)")
 
-	var confOverwrite = flag.Bool("force", false, "Force conflicting entry overwrite")
+	var confOverwrite = flag.Bool("force", false, "Force overwrite, if there are conflicting adds")
 
 	// setUp Input Arguments for apis
 	for _, f := range hooks.FlagSetUp {

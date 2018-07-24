@@ -32,7 +32,7 @@ type SQLConfiguration struct {
 	SQLEncryption string
 }
 
-// openDatabase opens the database used for accessing domains and saving results
+// OpenDatabase opens the database used for accessing domains and saving results
 func OpenDatabase(conf SQLConfiguration) error {
 	var err error
 	globalDatabase, err = sql.Open("mssql", fmt.Sprintf("server=%v;user id=%v;password=%v;database=%v;encrypt=%v",
@@ -66,7 +66,7 @@ func GetScans(table string, scanID int, scanStatus uint8) ([]hooks.DomainsReacha
 	return result, nil
 }
 
-// prepareScan modifies the pending scans according to the "scanType". Entries are duplicated with diffrent "TestWithSSL"-Values, if
+// PrepareScanData modifies the pending scans according to the "scanType". Entries are duplicated with diffrent "TestWithSSL"-Values, if
 // both Protocols are supported and wanted. If the wanted Protocol is not supported, they are marked with SCAN_STATUS IGNORED.
 func PrepareScanData(table string, scanID int, scanType int) error {
 	switch scanType {
@@ -284,7 +284,7 @@ func sliceScanDataToArgs(scanData []hooks.ScanData, scanStatus int) []interface{
 	return res
 }
 
-// readSqlConfig extracts the information out of the "sql_config.json" file
+// ReadSQLConfig extracts the information out of the "sql_config.json" file
 func ReadSQLConfig(file string) (SQLConfiguration, error) {
 	configFile, err := os.Open(file)
 	var config SQLConfiguration
@@ -300,6 +300,7 @@ func ReadSQLConfig(file string) (SQLConfiguration, error) {
 	return config, nil
 }
 
+// GetDomains returns the active domains, that are in the nextScan
 func GetDomains() ([]hooks.DomainsRow, error) {
 	var results []hooks.DomainsRow
 	var help hooks.DomainsRow
@@ -321,9 +322,7 @@ func GetDomains() ([]hooks.DomainsRow, error) {
 	return results, nil
 }
 
-// Put this in the controller maybe? For order
-
-// insertNewScan creates a new Entry in the ScanTable and returns the ScanID
+// InsertNewScan creates a new Entry in the ScanTable and returns the ScanID
 func InsertNewScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	var err error
 	rows, err := globalDatabase.Query(
@@ -342,7 +341,7 @@ func InsertNewScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	return scan, err
 }
 
-// getLastScan returns the specified by Id. If id==0, then it returns the last unfinished scan
+// GetLastScan returns the specified by Id. If id==0, then it returns the last unfinished scan
 func GetLastScan(id int) (hooks.ScanRow, error) {
 	var err error
 	var query string
@@ -368,7 +367,7 @@ func GetLastScan(id int) (hooks.ScanRow, error) {
 	return scan, err
 }
 
-//Update the specified Scan
+// UpdateScan updates the specified Scan
 func UpdateScan(scan hooks.ScanRow) error {
 	var err error
 	_, err = globalDatabase.Exec(
@@ -379,6 +378,7 @@ func UpdateScan(scan hooks.ScanRow) error {
 	return err
 }
 
+// SaveCertificates stores all given Certificates in the Table, while avoiding duplicate entries
 func SaveCertificates(rows []*hooks.CertificateRow, table string) error {
 	ctx := context.Background()
 	for _, row := range rows {
@@ -409,6 +409,7 @@ ELSE
 	return nil
 }
 
+// UpdateDomainsFull updates the Domains-Table with the given domains.
 func UpdateDomainsFull(rows []hooks.DomainsRowMetaInfo) error {
 	ctx := context.Background()
 	query := `
@@ -441,7 +442,7 @@ ELSE
 	return nil
 }
 
-// Gets domains with conflicting listID in a map
+// GetConflictingDomains returns the domains with conflicting listID in form of a map
 func GetConflictingDomains(domains []string, listID string) map[string]hooks.DomainsRowMetaInfo {
 	queryBase := `SELECT DomainName, ListID, isActive
 				FROM Domains
@@ -491,6 +492,7 @@ func GetConflictingDomains(domains []string, listID string) map[string]hooks.Dom
 	return result
 }
 
+// ResetDomains removes all domains from the next Scan
 func ResetDomains() error {
 	_, err := globalDatabase.Exec(
 		"Update Domains " +
@@ -501,16 +503,7 @@ func ResetDomains() error {
 	return nil
 }
 
-func ChangeListID(oldListID string, newListID string) error {
-	_, err := globalDatabase.Exec(
-		"Update Domains "+
-			"Set ListID = ? WHERE ListID = ?", newListID, oldListID)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
+// ActiveDomainsWithListID sets the active field of all domains in that list to the specified value
 func ActiveDomainsWithListID(active bool, ListID string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
@@ -521,6 +514,7 @@ func ActiveDomainsWithListID(active bool, ListID string) error {
 	return nil
 }
 
+// RemoveDomainsWithListID deletes the specified list
 func RemoveDomainsWithListID(ListID string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
@@ -531,6 +525,7 @@ func RemoveDomainsWithListID(ListID string) error {
 	return nil
 }
 
+// ScanDomainsWithListID adds all domains with the specified ListID to the nextScan
 func ScanDomainsWithListID(list string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
@@ -541,16 +536,18 @@ func ScanDomainsWithListID(list string) error {
 	return nil
 }
 
+// ActiveDomainsWithDomain changes the isActive field to the specified value for the given domain
 func ActiveDomainsWithDomain(active bool, domain string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
-			"Set isActive = ? WHERE DomianName = ?", active, domain)
+			"Set isActive = ? WHERE DomainName = ?", active, domain)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+// RemoveDomainsWithDomain removes all specified domains from a list
 func RemoveDomainsWithDomain(domain string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
@@ -561,6 +558,7 @@ func RemoveDomainsWithDomain(domain string) error {
 	return nil
 }
 
+// ScanDomainsWithDomain adds the specified domain to the next Scan
 func ScanDomainsWithDomain(domain string) error {
 	query := `
 	IF NOT EXISTS (SELECT * FROM Domains WHERE DomainName = ?)
@@ -584,6 +582,7 @@ func ScanDomainsWithDomain(domain string) error {
 	return nil
 }
 
+// RemoveDomainsWithDomainAndList deletes the specified domains from the specified list
 func RemoveDomainsWithDomainAndList(domain string, list string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+

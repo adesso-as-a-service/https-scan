@@ -1001,7 +1001,7 @@ func getSuites(details LabsEndpointDetails, weak bool) (string, int) {
 
 func flagSetUp() {
 	used = flag.Bool("no-ssllabs", false, "Don't use the SSLLabs-Scan")
-	maxRetries = flag.Int("labs-retries", 1, "Number of retries for the sslLabs-Scan")
+	maxRetries = flag.Int("ssllabs-retries", 1, "Number of retries for the sslLabs-Scan")
 }
 
 func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {

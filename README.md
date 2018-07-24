@@ -12,19 +12,20 @@ The following APIs are included at the moment:
 * HTTP Observatory API by mozilla (https://observatory.mozilla.org/terms.html)
 * Securityheaders.io
 
-Please familiarize yourself with their terms and conditions before useing the tool. 
+Additionally a crawler was added to check the redirects of a domain. 
 
 
 
 ## Requirements
 
 * Tested with go 10.3
+* A running SQL-table with the tables as specified [below](#sql-table)
 
 ## Usage 
 
 SYNOPSIS
 ```
-    ssllabs-scan [options]
+    https-scan [options]
 ```
 
 
@@ -32,44 +33,53 @@ SYNOPSIS
 Add to SYNOPSIS
 -->
 
-OPTIONS
+GENERAL OPTIONS
 
 | Option      | Default value | Description |
 | ----------- | ------------- | ----------- |
-| --api             | BUILTIN       | API entry point, for example https://www.example.com/api/ |
-| --verbosity       | info          | Configure log verbosity: error, info, debug, or trace |
-| --quiet           | false         | Disable status messages (logging) |
-| --ignore-mismatch | false   | Proceed with assessments on certificate mismatch |
-| --json-flat       | false         | Output results in flattened JSON format |
-| --hostfile        | none          | File containing hosts to scan (one per line) |
-| --usecache        | false         | If true, accept cached results (if available), else force live scan |
-| --grade           | false         | Output only the hostname: grade |
-| --hostcheck       | false         | If true, host resolution failure will result in a fatal error |
-| --no-ssllabs         | false      | If true, the ssllabs-test isn't run |
-| --no-ssltest  | false         | If true, the hosts aren't checked for their ssl-capabilities before scanning  |
-| --no-observatory  | false         | If true, the observatory-test isn't run |
-| --no-securityheaders  | false         | If true, the securityheaders-test isn't run |
-| --no-sql  | false         | If true, the results aren't saved to a SQL-table |
-| --labs-retries  | 0 | Sets the number of retries per host for the ssllabs-scan in case of failure |
-| --sslTest-retries | 1 | Sets the number of retries per host for the sslTest in case of failure |
-| --obs-retries  | 1 | Sets the number of retries per host for the observatory-scan in case of failure |
-| --secH-retries | 2 | Sets the number of retries per host for the securityheades-scan in case of failure |
-| --sql-retries  | 3 | Sets the number of retries if the SQL-connection fails |
+| -active | false | Set the given domains to active (only active domains are scanned)|
+| -add | false | Add the given domains to the specified ListID |
+| -continue | false | Continue last scan |
+| -domain | | Field to specify a single domain|
+| -file | | Field to specify a file containing multiple domains (separated by linebreak)|
+| -force | false | Force overwrite, if there are conflicting adds|
+| -inactive | false | Set the given domains to inactive (only active domains are scanned)|
+| -list | | Field to specify the domains belonging to a ListID |
+| -remove | false | Remove the given domains from the specified ListID |
+| -scan | false | Scan the given domains|
+| -verbosity | info | Configure log verbosity: error, notice, info, debug, or trace|
+| ----------- | ------------- | ----------- |
 
-All results will be saved in a folder "results" (unless run in quiet mode) and the logs will
-be saved in a "log"-folder. Both folders will be created, if not already existing, in the 
-execution path. To write the results to a SQL-Database, there needs to be a sql_config.json in
-the execution path, containing connection-information. You can find an example-file 
-["sql_config.json.example"](./sql_config.json.example) in the git.
+API-SPECIFIC OPTIONS
 
-### SQL-Table
+| Option      | Default value | Description |
+| ----------- | ------------- | ----------- |
+| -no-crawler | false | Don't use the redirect crawler|
+| -crawler-retries | 3 | Number of retries for the redirect crawler |
+| -no-obs | false | Don't use the Observatory-Scan|
+| -obs-sechead | 3 | Number of retries for the Observatory-Scan |
+| -sechead-crawler | false | Don't use the SecurityHeaders-Scan|
+| -sechead-retries | 3 | Number of retries for the SecurityHeaders-Scan |
+| -no-ssllabs | false | Don't use the SSLLabs-Scan|
+| -ssllabs-retries | 1 | Number of retries for the SSLLabs-Scan|
+| ----------- | ------------- | ----------- |
 
-Create the SQL-Table needed by this program, according to the file ["createSQLTable.sql"](./createSQLTable.sql)
+All results will be saved in a database. The database as well as the login credentials have to be 
+stored in a file *sql_config.json*. An empty file can be found [here](sql_config.json.example).
+The sql_user needs read and write access to the used tables.
 
+## SQL-Database
+<a name="sql-table"></a>
+The sql-database consists of:
+* a table containing the scan settings for each scan (link),
+* a table containing all domains and their current status (link)
+* and one table per scan-api (two in case of the ssllabs-scan) (link).
+
+
+## Structure
 
 ## Adding a new API
 
-It is possible to add new APIs to the scanner. Information about how to do that and a framework are 
-located in ["NewApi.go"](./NewApi.go.example).      
+This will be added later!    
 
 

@@ -562,7 +562,7 @@ func handleResults(result hooks.InternalMessage) {
 }
 
 func flagSetUp() {
-	used = flag.Bool("no-observatory", false, "Don't use the mozilla-observatory-Scan")
+	used = flag.Bool("no-obs", false, "Don't use the mozilla-observatory-Scan")
 	maxRetries = flag.Int("obs-retries", 3, "Number of retries for the mozilla-observatory-Scan")
 }
 
