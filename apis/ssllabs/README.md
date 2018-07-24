@@ -66,46 +66,50 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
 ## Details
 
 
+<a name="fwdsecracy"></a>
 
 ### ForwardSecrecy
-<a name="fwdsecracy"></a>
     * bit 0 (1) - set if at least one browser from our simulations negotiated a Forward Secrecy suite.
     * bit 1 (2) - set based on Simulator results if FS is achieved with modern clients. For example, the server supports ECDHE suites, but not DHE.
     * bit 2 (4) - set if all simulated clients achieve FS. In other words, this requires an ECDHE + DHE combination to be supported.
 
     
+<a name="reneg"></a>
 
 ### RenegSupport
-<a name="reneg"></a>
     * bit 0 (1) - set if insecure client-initiated renegotiation is supported
     * bit 1 (2) - set if secure renegotiation is supported
     * bit 2 (4) - set if secure client-initiated renegotiation is supported
     * bit 3 (8) - set if the server requires secure renegotiation support
 
-### OpenSSLCCS
 <a name="opensslccs"></a>
+
+### OpenSSLCCS
    * -1 - test failed
    * 0 - unknown
    * 1 - not vulnerable
    * 2 - possibly vulnerable, but not exploitable
    * 3 - vulnerable and exploitable
 
-### OpenSSLLuckyMinus20
 <a name="lucky"></a>
+
+### OpenSSLLuckyMinus20
     * -1 - test failed
     * 0 - unknown
     * 1 - not vulnerable
     * 2 - vulnerable and insecure
 
-### Ticketbleed
 <a name="ticketbleed"></a>
+
+### Ticketbleed
    * -1 - test failed
    * 0 - unknown
    * 1 - not vulnerable
    * 2 - vulnerable and insecure
 
-### Bleichenbacher
 <a name="robot"></a>
+
+### Bleichenbacher
    * -1 - test failed
    * 0 - unknown
    * 1 - not vulnerable
@@ -113,8 +117,9 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
    * 3 - vulnerable (strong oracle)
    * 4 - inconsistent results
 
-### Poodle
 <a name="poodle"></a>
+
+### Poodle
    * -3 - timeout
    * -2 - TLS not supported
    * -1 - test failed
@@ -122,14 +127,16 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
    * 1 - not vulnerable
    * 2 - vulnerable
 
-### Poodle
 <a name="known"></a>
+
+### Known Debian Insecure
   * 0 - no
   * 1 - yes, but they're not weak
   * 2 - yes and they're weak
 
+<a name="chain"></a>
+
 ### Certificate Chain Issues
-<a name="known"></a>
    * bit 0 (1) - unused
    * bit 1 (2) - incomplete chain (set only when we were able to build a chain by adding missing intermediate certificates from external sources)
    * bit 2 (4) - chain contains unrelated or duplicate certificates (i.e., certificates that are not part of the same chain)
@@ -137,8 +144,9 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
    * bit 4 (16) - contains a self-signed root certificate (not set for self-signed leafs)
    * bit 5 (32) - the certificates form a chain (if we added external certificates, bit 1 will be set), but we could not validate it. If the leaf was trusted, that means that we built a different chain we trusted.
 
-### Certificate Revocation Status
 <a name="revoc"></a>
+
+### Certificate Revocation Status
    * 0 - not checked
    * 1 - certificate revoked
    * 2 - certificate not revoked
@@ -146,8 +154,9 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
    * 4 - no revocation information
    * 5 - internal error
 
-### Certificate Issues
 <a name="CertIssue"></a>
+
+### Certificate Issues
    * bit 0 (1) - no chain of trust
    * bit 1 (2) - not before
    * bit 2 (4) - not after
