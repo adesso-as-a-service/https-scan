@@ -98,7 +98,9 @@ func openURL(myURL string) (TableRow, error) {
 				}
 			}
 			i++
+			resp.Body.Close()
 		} else {
+			resp.Body.Close()
 			break
 		}
 	}
