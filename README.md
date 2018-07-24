@@ -77,6 +77,8 @@ The sql-database consists of:
 * a table containing all domains and their current status (link)
 * and one table per scan-api (two in case of the ssllabs-scan) (link).
 
+The meaning of the entries for each table column can be found in the README for each api.
+
 
 ## Structure
 
