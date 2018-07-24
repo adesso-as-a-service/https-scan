@@ -114,42 +114,42 @@ func (e LabsErrorResponse) Error() string {
 }
 
 type TableRow struct {
-	IP                        string
-	StartTime                 int64
-	TestTime                  int64
-	Grade                     string
-	GradeTrustIgnored         string
-	FutureGrade               string
-	HasWarnings               bool
-	IsExceptional             bool
-	NumberWeakProtocols       int
-	WeakProtocols             string
-	NumberProtocols           int
-	Protocols                 string
-	NumberWeakSuites          int
-	WeakSuites                string
-	NumberSuites              int
-	Suites                    string
-	ForwardSecrecy            uint8
-	RenegSupport              uint8
-	SupportsRC4               bool
-	VulnBeast                 bool
-	VulnHeartbleed            bool
-	VulnOpenSslCcs            int16
-	VulnOpenSSLLuckyMinus20   int16
-	VulnTicketbleed           uint8
-	VulnBleichenbacher        int16
-	VulnPoodle                uint8
-	VulnFreak                 bool
-	VulnLogjam                bool
-	VulnDrown                 bool
-	DhUsesKnownPrimes         uint8
-	DhYsReuse                 bool
-	EcdhParameterReuse        bool
-	CertificateChainIssues    int16
-	CertificateChainLength    uint8
-	BaseCertificateThumbprint sql.NullString
-	ScanStatus                int
+	IP                             string
+	StartTime                      int64
+	TestTime                       int64
+	Grade                          string
+	GradeTrustIgnored              string
+	FutureGrade                    string
+	HasWarnings                    bool
+	IsExceptional                  bool
+	NumberWeakProtocols            int
+	WeakProtocols                  string
+	NumberProtocols                int
+	Protocols                      string
+	NumberWeakSuites               int
+	WeakSuites                     string
+	NumberSuites                   int
+	Suites                         string
+	ForwardSecrecy                 uint8
+	RenegSupport                   uint8
+	SupportsRC4                    bool
+	VulnBeast                      bool
+	VulnHeartbleed                 bool
+	VulnOpenSslCcs                 int16
+	VulnOpenSSLLuckyMinus20        int16
+	VulnTicketbleed                uint8
+	VulnBleichenbacher             int16
+	VulnPoodle                     uint8
+	VulnFreak                      bool
+	VulnLogjam                     bool
+	VulnDrown                      bool
+	DhUsesKnownPrimes              uint8
+	DhYsReuse                      bool
+	EcdhParameterReuse             bool
+	CertificateChainIssues         int16
+	CertificateChainLength         uint8
+	EndEntityCertificateThumbprint sql.NullString
+	ScanStatus                     int
 }
 
 type LabsKey struct {
@@ -951,7 +951,7 @@ func makeSSLLabsRow(report *LabsReport) *TableRow {
 		row.CertificateChainLength = uint8(len(details.CertChains[0].CertIds))
 	}
 	if len(report.Certs) != 0 {
-		row.BaseCertificateThumbprint = sql.NullString{
+		row.EndEntityCertificateThumbprint = sql.NullString{
 			String: hooks.Truncate(report.Certs[0].Sha1Hash, 40),
 			Valid:  true,
 		}

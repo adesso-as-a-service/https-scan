@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -246,7 +247,7 @@ func getWhereString(whereCond *structs.Struct) (string, []interface{}) {
 	return where, args
 }
 
-// insertScanData adds scanData to the scan-Databases
+// InsertScanData adds scanData to the scan-Databases
 func InsertScanData(tables []string, scanData []hooks.ScanData) error {
 	var pos int
 	for pos = maxSQLInserts; pos < len(scanData); pos += maxSQLInserts {
@@ -257,7 +258,7 @@ func InsertScanData(tables []string, scanData []hooks.ScanData) error {
 			_, err := globalDatabase.Exec(query,
 				sliceScanDataToArgs(scanData[pos-maxSQLInserts:pos], hooks.StatusPending)...)
 			if err != nil {
-				err = fmt.Errorf("While executing\n%s\n an error occured: %v", query, err)
+				err = fmt.Errorf("While executing\n%s\n an error occurred: %v", query, err)
 				return err
 			}
 		}
@@ -304,7 +305,7 @@ func GetDomains() ([]hooks.DomainsRow, error) {
 	var help hooks.DomainsRow
 	rows, err := globalDatabase.Query(
 		"SELECT DomainID, DomainName " +
-			"FROM Domains")
+			"FROM Domains WHERE nextScan = 1 AND isActive = 1")
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +405,191 @@ ELSE
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func UpdateDomainsFull(rows []hooks.DomainsRowMetaInfo) error {
+	ctx := context.Background()
+	query := `
+IF NOT EXISTS (SELECT * FROM Domains WHERE DomainName = ?)
+	BEGIN
+		INSERT INTO Domains
+		(DomainName,ListID,IsActive,NextScan)
+		VALUES
+		(?, ?, ?, ?)
+	END
+ELSE
+	BEGIN
+		UPDATE Domains
+		SET ListID = ?, IsActive = ?, NextScan = ?
+		WHERE DomainName = ?
+	END
+`
+	for _, row := range rows {
+		if row.DomainName == "" {
+			continue
+		}
+		var err error
+		_, err = globalDatabase.ExecContext(ctx,
+			query,
+			row.DomainName, row.DomainName, row.ListID, row.IsActive, row.NextScan, row.ListID, row.IsActive, row.NextScan, row.DomainName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Gets domains with conflicting listID in a map
+func GetConflictingDomains(domains []string, listID string) map[string]hooks.DomainsRowMetaInfo {
+	queryBase := `SELECT DomainName, ListID, isActive
+				FROM Domains
+				WHERE (ListID != ? OR isActive = 0) AND DomainName IN `
+	var queryIn bytes.Buffer
+
+	queryIn.WriteString("(")
+	for i := 0; i < 99; i++ {
+		queryIn.WriteString("?,")
+	}
+	queryIn.WriteString("?)")
+	result := make(map[string]hooks.DomainsRowMetaInfo)
+	var list hooks.DomainsRowMetaInfo
+	var currentDomains []interface{}
+	intDoms := make([]interface{}, len(domains))
+	for i, dom := range domains {
+		intDoms[i] = dom
+	}
+	for len(intDoms) >= 100 {
+		currentDomains, intDoms = intDoms[:100], intDoms[100:]
+		rows, err := globalDatabase.Query(queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...)...)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		for rows.Next() {
+			if err := rows.Scan(&list.DomainName, &list.ListID, &list.IsActive); err != nil {
+				logger.Fatal(err)
+			}
+			result[list.DomainName] = list
+		}
+	}
+	queryIn.Truncate(2 * len(intDoms))
+	queryIn.WriteString(")")
+	currentDomains = intDoms
+	rows, err := globalDatabase.Query(queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...)...)
+	if err != nil {
+		logger.Printf("Query:%s\nparams: %v\n", queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...))
+		logger.Panic(err)
+	}
+	for rows.Next() {
+		if err := rows.Scan(&list.DomainName, &list.ListID, &list.IsActive); err != nil {
+			logger.Panic(err)
+		}
+		result[list.DomainName] = list
+	}
+
+	return result
+}
+
+func ResetDomains() error {
+	_, err := globalDatabase.Exec(
+		"Update Domains " +
+			"Set nextScan = 0")
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ChangeListID(oldListID string, newListID string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set ListID = ? WHERE ListID = ?", newListID, oldListID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ActiveDomainsWithListID(active bool, ListID string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set isActive = ? WHERE ListID = ?", active, ListID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func RemoveDomainsWithListID(ListID string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set ListID = NULL WHERE ListID = ?", ListID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ScanDomainsWithListID(list string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set nextScan = 1 WHERE ListID = ?", list)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ActiveDomainsWithDomain(active bool, domain string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set isActive = ? WHERE DomianName = ?", active, domain)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func RemoveDomainsWithDomain(domain string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set ListID = NULL WHERE DomainName = ?", domain)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ScanDomainsWithDomain(domain string) error {
+	query := `
+	IF NOT EXISTS (SELECT * FROM Domains WHERE DomainName = ?)
+		BEGIN
+			INSERT INTO Domains
+			(DomainName,NextScan)
+			VALUES
+			(?, 1)
+		END
+	ELSE
+		BEGIN
+			UPDATE Domains
+			SET   NextScan = 1
+			WHERE DomainName = ?
+		END
+	`
+	_, err := globalDatabase.Exec(query, domain, domain, domain)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func RemoveDomainsWithDomainAndList(domain string, list string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set ListID = NULL WHERE DomainName = ? AND ListID = ?", domain, list)
+	if err != nil {
+		return err
 	}
 	return nil
 }

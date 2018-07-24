@@ -1,4 +1,4 @@
-ssllabs-scan
+https-scan
 ============
 
 This tool is a command-line client designed for automated and/or bulk testing of domains with
@@ -18,15 +18,19 @@ Please familiarize yourself with their terms and conditions before useing the to
 
 ## Requirements
 
-* Go >= 1.3
+* Tested with go 10.3
 
 ## Usage 
 
 SYNOPSIS
 ```
-    ssllabs-scan [options] hostname
-    ssllabs-scan [options] --hostfile file
+    ssllabs-scan [options]
 ```
+
+
+<!---
+Add to SYNOPSIS
+-->
 
 OPTIONS
 

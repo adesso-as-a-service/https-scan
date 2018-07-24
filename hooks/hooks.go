@@ -160,6 +160,14 @@ type CertificateRow struct {
 	NextThumbprint   sql.NullString
 }
 
+type DomainsRowMetaInfo struct {
+	DomainID   int
+	DomainName string
+	ListID     sql.NullString
+	IsActive   bool
+	NextScan   bool
+}
+
 func (manager *Manager) GetTableName() string {
 	return manager.Table + "V" + manager.Version
 }

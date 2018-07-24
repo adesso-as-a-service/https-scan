@@ -1,2 +1,2 @@
 build:
-	go build ssllabs-scan.go
+	go build https-scanner.go

@@ -121,7 +121,7 @@ M:
 		}
 	}
 	close(sslChannel)
-	scan.Total = len(scanData)
+	scan.Total = len(scanData) + scan.Unreachable
 	return scanData, scan, err
 
 }
