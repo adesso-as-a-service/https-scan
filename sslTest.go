@@ -71,7 +71,7 @@ func runSSLTest(domains []hooks.DomainsRow, scan hooks.ScanRow) ([]hooks.ScanDat
 	currentDomain, domains := domains[0], domains[1:]
 	sslChannel := make(chan hooks.ScanData)
 	currentScans := 0
-	maxScans := 20
+	maxScans := 10
 	var scanData []hooks.ScanData
 	var err error
 L:
