@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"./backend"
 	"./hooks"
 )
 
@@ -16,9 +17,13 @@ var sslLogger = log.New(hooks.LogWriter, "SSLTest\t", log.Ldate|log.Ltime)
 // 1 http
 // 2 https
 // 3 http + https
+// 4 DNSLookupError
 func testHost(host string) uint8 {
 	var res uint8
 	res = 0
+	if !DNSexists(host) {
+		return 4
+	}
 	if testHTTPS(host) {
 		res += 2
 	}
@@ -59,10 +64,28 @@ func testHTTP(host string) bool {
 	return true
 }
 
-func testSSL(domain hooks.DomainsRow, channel chan hooks.ScanData) {
+// DNSexists checks if there is a domain entry for the host
+func DNSexists(host string) bool {
+	_, err := net.LookupHost(host)
+	if err != nil {
+		_, ok := err.(*net.DNSError)
+		return !ok
+	}
+	return true
+}
+
+func testSSL(domain hooks.DomainsRow, channel chan hooks.ScanData, scanID int) {
 	var result hooks.ScanData
 	result.DomainID = domain.DomainID
 	result.DomainReachable = testHost(domain.DomainName)
+	if result.DomainReachable == 0 || result.DomainReachable == 4 {
+		err := backend.SaveUnreachable(scanID, result.DomainID, result.DomainReachable == 4)
+		if err != nil {
+			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed saving Unreachable-Status for %v: %v", result.DomainID, err), logLevel, hooks.LogError)
+		}
+		result.DomainReachable = 0
+	}
+
 	channel <- result
 }
 
@@ -91,7 +114,7 @@ L:
 		default:
 			if currentScans < maxScans {
 				currentScans++
-				go testSSL(currentDomain, sslChannel)
+				go testSSL(currentDomain, sslChannel, scan.ScanID)
 				if len(domains) > 0 {
 					currentDomain, domains = domains[0], domains[1:]
 				} else {

@@ -65,6 +65,32 @@ var manager = hooks.Manager{
 	FirstScan:        false,                     //hasn't started first scan
 }
 
+// CrawlerConfig
+type Config struct {
+	Retries        int
+	ScanType       int
+	ParallelScans  int
+	LogLevel       string
+	APILocation    string
+	IgnoreMismatch bool
+	StartNew       bool
+	FromCache      bool
+	MaxAge         int
+}
+
+// defaultConfig
+var currentConfig = Config{
+	Retries:        3,
+	ScanType:       hooks.ScanOnlySSL,
+	ParallelScans:  10,
+	LogLevel:       "info",
+	APILocation:    "https://api.ssllabs.com/api/v3",
+	IgnoreMismatch: true,
+	StartNew:       false,
+	FromCache:      true,
+	MaxAge:         24,
+}
+
 var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id$)"
 
 // How many assessments does the server think we have in progress?
@@ -1001,20 +1027,40 @@ func getSuites(details LabsEndpointDetails, weak bool) (string, int) {
 
 func flagSetUp() {
 	used = flag.Bool("no-ssllabs", false, "Don't use the SSLLabs-Scan")
-	maxRetries = flag.Int("ssllabs-retries", 1, "Number of retries for the sslLabs-Scan")
 }
 
-func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage, config interface{}) bool {
 	currentScan.SSLLabs = !*used
 	currentScan.SSLLabsVersion = manager.Version
 	if !*used {
 		if manager.MaxParallelScans != 0 {
-			manager.MaxRetries = *maxRetries
+			parseConfig(config)
 			manager.OutputChannel = channel
 			return true
 		}
 	}
 	return false
+}
+
+// reads Config from interfaceFormat to Config and saves Results
+func parseConfig(config interface{}) {
+	jsonString, err := json.Marshal(config)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	err = json.Unmarshal(jsonString, &currentConfig)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	manager.MaxRetries = currentConfig.Retries
+	manager.ScanType = currentConfig.ScanType
+	maxScans = currentConfig.ParallelScans
+	APILocation = currentConfig.APILocation
+	fromCache = currentConfig.FromCache
+	ignoreMismatch = currentConfig.IgnoreMismatch
+	maxAge = currentConfig.MaxAge
+	startNew = currentConfig.StartNew
+	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
 }
 
 func continueScan(scan hooks.ScanRow) bool {
@@ -1048,6 +1094,8 @@ func init() {
 	hooks.ManagerHandleScan[manager.Table] = handleScan
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
+
+	hooks.ManagerParseConfig[manager.Table] = parseConfig
 
 	setUpLogger()
 }

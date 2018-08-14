@@ -112,6 +112,7 @@ type ScanRow struct {
 	SecurityHeadersVersion string
 	Crawler                bool
 	CrawlerVersion         string
+	Config                 sql.NullString
 	Unreachable            int
 	Total                  int
 	Done                   bool
@@ -231,7 +232,7 @@ func Truncate(str string, trLen int) string {
 var FlagSetUp map[string]func()
 
 // ConfigureSetUp contains all the API-hooks for configuring the apis based on the commandline flags
-var ConfigureSetUp map[string]func(*ScanRow, chan ScanStatusMessage) bool
+var ConfigureSetUp map[string]func(*ScanRow, chan ScanStatusMessage, interface{}) bool
 
 // ManagerMap is a map of all Managers that can be used
 var ManagerMap map[string]*Manager
@@ -248,6 +249,9 @@ var ManagerHandleScan map[string]func([]DomainsReachable, chan InternalMessage) 
 // ManagerHandleResults contains all the API-hooks to the individual functions processing the incoming results
 var ManagerHandleResults map[string]func(InternalMessage)
 
+// ManagerParseConfig sets the given configuration
+var ManagerParseConfig map[string]func(interface{})
+
 var LogWriter io.Writer
 
 var LogLevel int
@@ -260,12 +264,13 @@ func (manager *Manager) CheckDoError() bool {
 
 func init() {
 	FlagSetUp = make(map[string]func())
-	ConfigureSetUp = make(map[string]func(*ScanRow, chan ScanStatusMessage) bool)
+	ConfigureSetUp = make(map[string]func(*ScanRow, chan ScanStatusMessage, interface{}) bool)
 	ManagerMap = make(map[string]*Manager)
 	ContinueScan = make(map[string]func(ScanRow) bool)
 	ManagerSetUp = make(map[string]func())
 	ManagerHandleScan = make(map[string]func([]DomainsReachable, chan InternalMessage) []DomainsReachable)
 	ManagerHandleResults = make(map[string]func(InternalMessage))
+	ManagerParseConfig = make(map[string]func(interface{}))
 	buildLoggers()
 }
 
@@ -328,4 +333,23 @@ func buildLoggers() {
 			}
 		}
 	}
+}
+
+// ParseLogLevel returns the loglevel corresponding to a string
+func ParseLogLevel(level string) int {
+	switch {
+	case level == "error":
+		return LogError
+	case level == "notice":
+		return LogNotice
+	case level == "info":
+		return LogInfo
+	case level == "debug":
+		return LogDebug
+	case level == "trace":
+		return LogTrace
+	}
+
+	log.Fatalf("[ERROR] Unrecognized log level: %v", level)
+	return -1
 }

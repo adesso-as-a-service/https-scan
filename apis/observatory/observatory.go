@@ -97,6 +97,28 @@ var manager = hooks.Manager{
 	FirstScan:        false,                     //hasn't started first scan
 }
 
+// CrawlerConfig
+type Config struct {
+	Retries       int
+	ScanType      int
+	ParallelScans int
+	LogLevel      string
+	Hidden        bool
+	Rescan        bool
+	APILocation   string
+}
+
+// defaultConfig
+var currentConfig = Config{
+	Retries:       3,
+	ScanType:      hooks.ScanOnePreferSSL,
+	APILocation:   "https://http-observatory.security.mozilla.org/api/v1",
+	ParallelScans: 10,
+	LogLevel:      "info",
+	Hidden:        true,
+	Rescan:        false,
+}
+
 type Policy struct {
 	AntiClickjacking      bool
 	DefaultNone           bool
@@ -294,13 +316,13 @@ type ScanResults struct {
 // invokeObservatoryAnalyzation starts an HTTP-Observatory assessment and polls
 // To see if the scan is done, then adding the result to the calling LabsReport object
 func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
-	apiURL := "https://http-observatory.security.mozilla.org/api/v1/analyze?host=" + host
+	apiURL := currentConfig.APILocation + "/analyze?host=" + host
 	var analyzeResult AnalyzeResult
 
 	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Getting observatory analyzation: %v", host), manager.LogLevel, hooks.LogTrace)
 
 	// Initiate the scan request, the body of the request contains information to hide the scan from the front-page
-	_, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader("hidden=true&rescan=false"))
+	_, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(fmt.Sprintf("hidden=%v&rescan=%v", currentConfig.Hidden, currentConfig.Rescan)))
 	if err != nil {
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error invoking observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogDebug)
 		return AnalyzeResult{}, err
@@ -350,7 +372,7 @@ func invokeObservatoryResults(analyzeResults AnalyzeResult) (ScanResults, error)
 		return ScanResults{}, errors.New("Invoked results without finished analysis")
 	}
 
-	resultApiUrl := "https://http-observatory.security.mozilla.org/api/v1/getScanResults?scan=" + strconv.Itoa(analyzeResults.ScanID)
+	resultApiUrl := currentConfig.APILocation + "/getScanResults?scan=" + strconv.Itoa(analyzeResults.ScanID)
 	response, err := http.Get(resultApiUrl)
 	if err != nil {
 		return ScanResults{}, err
@@ -563,20 +585,36 @@ func handleResults(result hooks.InternalMessage) {
 
 func flagSetUp() {
 	used = flag.Bool("no-obs", false, "Don't use the mozilla-observatory-Scan")
-	maxRetries = flag.Int("obs-retries", 3, "Number of retries for the mozilla-observatory-Scan")
 }
 
-func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage, config interface{}) bool {
 	currentScan.Observatory = !*used
 	currentScan.ObservatoryVersion = manager.Version
 	if !*used {
 		if manager.MaxParallelScans != 0 {
-			manager.MaxRetries = *maxRetries
+			parseConfig(config)
 			manager.OutputChannel = channel
 			return true
 		}
 	}
 	return false
+}
+
+// reads Config from interfaceFormat to Config and saves Results
+func parseConfig(config interface{}) {
+	jsonString, err := json.Marshal(config)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	err = json.Unmarshal(jsonString, &currentConfig)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+	}
+
+	manager.MaxRetries = currentConfig.Retries
+	manager.ScanType = currentConfig.ScanType
+	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
+	manager.MaxParallelScans = currentConfig.ParallelScans
 }
 
 func continueScan(scan hooks.ScanRow) bool {
@@ -608,6 +646,8 @@ func init() {
 	hooks.ManagerHandleScan[manager.Table] = handleScan
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
+
+	hooks.ManagerParseConfig[manager.Table] = parseConfig
 
 	setUpLogger()
 }

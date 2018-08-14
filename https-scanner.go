@@ -10,8 +10,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -29,25 +31,7 @@ var logLevel int
 var logger = log.New(hooks.LogWriter, "Control\t", log.Ldate|log.Ltime)
 var infoLogger = log.New(hooks.LogWriter, "", 0)
 var forceOverwrite bool
-
-// parseLogLevel returns the loglevel corresponding to a string
-func parseLogLevel(level string) int {
-	switch {
-	case level == "error":
-		return hooks.LogError
-	case level == "notice":
-		return hooks.LogNotice
-	case level == "info":
-		return hooks.LogInfo
-	case level == "debug":
-		return hooks.LogDebug
-	case level == "trace":
-		return hooks.LogTrace
-	}
-
-	logger.Fatalf("[ERROR] Unrecognized log level: %v", level)
-	return -1
-}
+var configuration map[string]interface{}
 
 func getTablenames(usedManagers []string) []string {
 	var result []string
@@ -69,6 +53,10 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	domains, err := backend.GetDomains()
 	if err != nil {
 		return scan, err
+	}
+	if len(domains) == 0 {
+		backend.UpdateScan(scan)
+		logger.Fatal("There are no domains to scan!")
 	}
 	scanData, scan, err := runSSLTest(domains, scan)
 	if err != nil {
@@ -94,6 +82,14 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	scan, err = backend.GetLastScan(scan.ScanID)
 	if err != nil {
 		return scan, err
+	}
+	err = json.Unmarshal([]byte(scan.Config.String), &configuration)
+	if err != nil {
+		hooks.LogIfNeeded(logger, fmt.Sprintf("Failed unmarshaling configuration '%v': %v", scan.Config.String, err), logLevel, hooks.LogCritical)
+	}
+	// configuring Apis and set used managers
+	for tableName, f := range hooks.ManagerParseConfig {
+		f(configuration[tableName])
 	}
 
 	for tableName, f := range hooks.ContinueScan {
@@ -126,7 +122,7 @@ func conflictAdd(domains []string, list string) error {
 			domainStruct[currentPos] = helpStruct
 			currentPos++
 		} else {
-			fmt.Printf("Conflicting Entries:\n\tOld: Domain: %s\tListID: %s\tActive: %b\n\tNew: Domain: %s\tListID: %s\tActive: %v\n",
+			fmt.Printf("Conflicting Entries:\n\tOld: Domain: %s\tListID: %s\tActive: %v\n\tNew: Domain: %s\tListID: %s\tActive: %v\n",
 				conflict.DomainName, conflict.ListID.String, conflict.IsActive, helpStruct.DomainName, helpStruct.ListID.String, helpStruct.IsActive)
 			// read user input
 			if forceOverwrite {
@@ -321,6 +317,8 @@ func main() {
 
 	var confOverwrite = flag.Bool("force", false, "Force overwrite, if there are conflicting adds")
 
+	var confConfig = flag.String("config", "", "Configuration file for the scanners")
+
 	// setUp Input Arguments for apis
 	for _, f := range hooks.FlagSetUp {
 		f()
@@ -338,7 +336,7 @@ func main() {
 	forceOverwrite = *confOverwrite
 
 	// configure managers
-	logLevel = parseLogLevel(*confVerbosity)
+	logLevel = hooks.ParseLogLevel(*confVerbosity)
 	// set log level for all managers
 	for _, man := range hooks.ManagerMap {
 		man.LogLevel = logLevel
@@ -349,9 +347,21 @@ func main() {
 	timeout := make(map[string]time.Time)
 	finished := make(map[string]bool)
 
+	if *confConfig != "" && !*confContinue {
+		configuration, err = readConfigFile(*confConfig)
+		if err != nil {
+			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed reading configuration-file '%v': %v", *confConfig, err), logLevel, hooks.LogCritical)
+		}
+		configString, err := json.Marshal(configuration)
+		if err != nil {
+			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed marshaling configuration: %v", err), logLevel, hooks.LogCritical)
+		}
+		currentScan.Config.String = string(configString)
+		currentScan.Config.Valid = true
+	}
 	// configuring Apis and set used managers
 	for tableName, f := range hooks.ConfigureSetUp {
-		if f(&currentScan, outputChannel) {
+		if f(&currentScan, outputChannel, configuration[tableName]) {
 			usedManagers = append(usedManagers, tableName)
 		}
 	}
@@ -365,6 +375,7 @@ func main() {
 	// Opening Database
 	err = backend.OpenDatabase(config)
 	if err != nil {
+
 		logger.Fatalf("Error occurred while opening the database: %v", err)
 	}
 
@@ -372,7 +383,7 @@ func main() {
 		// parse Input settings
 		test, err := parseSettings(*confList, *confFile, *confDomain, *confScan, *confAdd, *confRemove, *confInactive, *confActive)
 		if err != nil {
-			logger.Panic(err)
+			logger.Fatal(err)
 		}
 
 		if !test {
@@ -456,4 +467,17 @@ func parseDomain(domain string) string {
 		return myURL.Host
 	}
 	return domain
+}
+
+// Read Config from File
+func readConfigFile(file string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	jsonString, err := ioutil.ReadFile(file)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(jsonString, &result)
+
+	return result, err
+
 }

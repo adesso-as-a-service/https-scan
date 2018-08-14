@@ -326,10 +326,10 @@ func GetDomains() ([]hooks.DomainsRow, error) {
 func InsertNewScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	var err error
 	rows, err := globalDatabase.Query(
-		"INSERT INTO Scans (SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion, Done) "+
+		"INSERT INTO Scans (SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion, Config, Done) "+
 			"OUTPUT inserted.ScanID "+
-			"VALUES (?,?,?,?,?,?,?,?,0)",
-		scan.SSLLabs, scan.SSLLabsVersion, scan.Observatory, scan.ObservatoryVersion, scan.SecurityHeaders, scan.SecurityHeadersVersion, scan.Crawler, scan.CrawlerVersion)
+			"VALUES (?,?,?,?,?,?,?,?,?,0)",
+		scan.SSLLabs, scan.SSLLabsVersion, scan.Observatory, scan.ObservatoryVersion, scan.SecurityHeaders, scan.SecurityHeadersVersion, scan.Crawler, scan.CrawlerVersion, scan.Config)
 	if err != nil {
 		return hooks.ScanRow{}, err
 	}
@@ -346,7 +346,7 @@ func GetLastScan(id int) (hooks.ScanRow, error) {
 	var err error
 	var query string
 	var scan hooks.ScanRow
-	query = "SELECT TOP(1) ScanID, SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion " +
+	query = "SELECT TOP(1) ScanID, SSLLabs,SSLLabsVersion,Observatory, ObservatoryVersion, SecurityHeaders, SecurityHeadersVersion, Crawler, CrawlerVersion, Config " +
 		"FROM Scans " +
 		"WHERE Done = 0 "
 	if id != -1 {
@@ -360,7 +360,7 @@ func GetLastScan(id int) (hooks.ScanRow, error) {
 		return hooks.ScanRow{}, err
 	}
 	for rows.Next() {
-		if err := rows.Scan(&scan.ScanID, &scan.SSLLabs, &scan.SSLLabsVersion, &scan.Observatory, &scan.ObservatoryVersion, &scan.SecurityHeaders, &scan.SecurityHeadersVersion, &scan.Crawler, &scan.CrawlerVersion); err != nil {
+		if err := rows.Scan(&scan.ScanID, &scan.SSLLabs, &scan.SSLLabsVersion, &scan.Observatory, &scan.ObservatoryVersion, &scan.SecurityHeaders, &scan.SecurityHeadersVersion, &scan.Crawler, &scan.CrawlerVersion, &scan.Config); err != nil {
 			logger.Fatal(err)
 		}
 	}
@@ -461,7 +461,7 @@ func GetConflictingDomains(domains []string, listID string) map[string]hooks.Dom
 	for i, dom := range domains {
 		intDoms[i] = dom
 	}
-	for len(intDoms) >= 100 {
+	for len(intDoms) > 100 {
 		currentDomains, intDoms = intDoms[:100], intDoms[100:]
 		rows, err := globalDatabase.Query(queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...)...)
 		if err != nil {
@@ -587,6 +587,17 @@ func RemoveDomainsWithDomainAndList(domain string, list string) error {
 	_, err := globalDatabase.Exec(
 		"Update Domains "+
 			"Set ListID = NULL WHERE DomainName = ? AND ListID = ?", domain, list)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// SaveUnreachable stores unreachable Domains in the corresponding table
+func SaveUnreachable(scanID int, DomainID int, DNSError bool) error {
+	_, err := globalDatabase.Exec(
+		"INSERT INTO Unreachable (ScanID, DomainID, DNSError) "+
+			"VALUES (?,?,?)", scanID, DomainID, DNSError)
 	if err != nil {
 		return err
 	}

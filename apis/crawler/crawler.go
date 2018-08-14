@@ -4,9 +4,11 @@ package crawler
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,14 +22,17 @@ import (
 
 // TableRow represents the scan results for the crawler table
 type TableRow struct {
-	Redirects   int
-	StatusCodes string
-	URLs        string
-	ScanStatus  int
+	Redirects      int
+	StatusCodes    string
+	URLs           string
+	LastStatusCode int16
+	LastURL        string
+	IP             string
+	ScanStatus     int
 }
 
 // CrawlerMaxRedirects sets the maximum number of Redirects to be followed
-var maxRedirects uint8 = 10
+var maxRedirects int = 10
 
 var maxScans = 10
 
@@ -54,6 +59,24 @@ var manager = hooks.Manager{
 	FirstScan:        false,                     //hasn't started first scan
 }
 
+// CrawlerConfig
+type Config struct {
+	Retries       int
+	ScanType      int
+	MaxRedirects  int
+	ParallelScans int
+	LogLevel      string
+}
+
+// defaultConfig
+var currentConfig = Config{
+	Retries:       3,
+	ScanType:      hooks.ScanBoth,
+	MaxRedirects:  10,
+	ParallelScans: 10,
+	LogLevel:      "info",
+}
+
 func getBaseURL(myURL string) string {
 	u, _ := url.Parse(myURL)
 	u.Path = ""
@@ -66,7 +89,7 @@ func openURL(myURL string) (TableRow, error) {
 	var urls []string
 	var rCodes []string
 	var results TableRow
-	var i = uint8(0)
+	var i = 0
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -83,6 +106,11 @@ func openURL(myURL string) (TableRow, error) {
 			return results, err
 		}
 		urls = append(urls, myURL)
+		results.LastURL = hooks.Truncate(myURL, 200)
+		results.LastStatusCode = int16(resp.StatusCode)
+		urlStr, _ := url.Parse(myURL)
+		myIP, _ := net.LookupIP(urlStr.Hostname())
+		results.IP = hooks.Truncate(myIP[0].String(), 30)
 		rCodes = append(rCodes, fmt.Sprintf("%d", resp.StatusCode))
 
 		if resp.StatusCode/100 == 3 {
@@ -201,20 +229,36 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 
 func flagSetUp() {
 	used = flag.Bool("no-crawler", false, "Don't use the redirect crawler")
-	maxRetries = flag.Int("crawler-retries", 3, "Number of retries for the redirect crawler")
 }
 
-func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage, config interface{}) bool {
 	currentScan.Crawler = !*used
 	currentScan.CrawlerVersion = manager.Version
 	if !*used {
 		if manager.MaxParallelScans != 0 {
-			manager.MaxRetries = *maxRetries
+			parseConfig(config)
 			manager.OutputChannel = channel
 			return true
 		}
 	}
 	return false
+}
+
+// reads Config from interfaceFormat to Config and saves Results
+func parseConfig(config interface{}) {
+	jsonString, err := json.Marshal(config)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	err = json.Unmarshal(jsonString, &currentConfig)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	manager.MaxRetries = currentConfig.Retries
+	manager.ScanType = currentConfig.ScanType
+	maxScans = currentConfig.ParallelScans
+	maxRedirects = currentConfig.MaxRedirects
+	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
 }
 
 func continueScan(scan hooks.ScanRow) bool {
@@ -246,6 +290,8 @@ func init() {
 	hooks.ManagerHandleScan[manager.Table] = handleScan
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
+
+	hooks.ManagerParseConfig[manager.Table] = parseConfig
 
 	setUpLogger()
 

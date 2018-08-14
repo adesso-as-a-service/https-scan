@@ -1,6 +1,7 @@
 package securityheaders
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -39,6 +40,28 @@ var manager = hooks.Manager{
 	ScanID:           0,                         // scanID
 	Errors:           []hooks.InternalMessage{}, //errors
 	FirstScan:        false,                     //hasn't started first scan
+}
+
+// CrawlerConfig
+type Config struct {
+	Retries        int
+	ScanType       int
+	ParallelScans  int
+	LogLevel       string
+	Hidden         string
+	FollowRedirect string
+	APILocation    string
+}
+
+// defaultConfig
+var currentConfig = Config{
+	Retries:        3,
+	ScanType:       hooks.ScanBoth,
+	APILocation:    "https://securityheaders.io/?q=",
+	ParallelScans:  10,
+	LogLevel:       "info",
+	Hidden:         "on",
+	FollowRedirect: "off",
 }
 
 // TableRow is the object used for unmarshaling the results by the API
@@ -239,11 +262,10 @@ func invokeSecurityHeaders(host string, supportsSSL bool) (TableRow, error) {
 
 	if supportsSSL {
 		hostURL = "https://" + host
-		apiURL = "https://securityheaders.io/?q=" + hostURL + "&hide=on&followRedirects=off"
 	} else {
 		hostURL = host
-		apiURL = "https://securityheaders.io/?q=" + hostURL + "&hide=on&followRedirects=off"
 	}
+	apiURL = currentConfig.APILocation + hostURL + fmt.Sprintf("&hide=%v&followRedirects=%v", currentConfig.Hidden, currentConfig.FollowRedirect)
 
 	// Get http Header from the securityheaders API to get the grading of the scanned host
 	response, err := http.Get(apiURL)
@@ -310,20 +332,41 @@ func handleResults(result hooks.InternalMessage) {
 
 func flagSetUp() {
 	used = flag.Bool("no-sechead", false, "Don't use the SecurityHeaders.io-Scan")
-	maxRetries = flag.Int("sechead-retries", 3, "Number of retries for the SecurityHeaders.io-Scan")
 }
 
-func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage) bool {
+func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMessage, config interface{}) bool {
 	currentScan.SecurityHeaders = !*used
 	currentScan.SecurityHeadersVersion = manager.Version
 	if !*used {
 		if manager.MaxParallelScans != 0 {
-			manager.MaxRetries = *maxRetries
+			parseConfig(config)
 			manager.OutputChannel = channel
 			return true
 		}
 	}
 	return false
+}
+
+// reads Config from interfaceFormat to Config and saves Results
+func parseConfig(config interface{}) {
+	jsonString, err := json.Marshal(config)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	err = json.Unmarshal(jsonString, &currentConfig)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+	}
+	if currentConfig.Hidden != "on" && currentConfig.Hidden != "off" {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.Hidden), manager.LogLevel, hooks.LogCritical)
+	}
+	if currentConfig.FollowRedirect != "on" && currentConfig.FollowRedirect != "off" {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.FollowRedirect), manager.LogLevel, hooks.LogCritical)
+	}
+	manager.MaxRetries = currentConfig.Retries
+	manager.ScanType = currentConfig.ScanType
+	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
+	manager.MaxParallelScans = currentConfig.ParallelScans
 }
 
 func continueScan(scan hooks.ScanRow) bool {
@@ -354,6 +397,8 @@ func init() {
 	hooks.ManagerHandleScan[manager.Table] = handleScan
 
 	hooks.ManagerHandleResults[manager.Table] = handleResults
+
+	hooks.ManagerParseConfig[manager.Table] = parseConfig
 
 	setUpLogger()
 }
