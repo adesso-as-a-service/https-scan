@@ -62,3 +62,15 @@ The Observatory-Scan performs the scan provided by mozilla ([observatory.mozilla
     * 256: Unsafe Inline
     * 512: Unsafe Inline style
     * 1024: Unsafe Objects
+
+## Configuration
+
+| Field | Possible Values | Description |
+| ----------- | ----------- | ----------- |
+| Retries | any positive Integer | Numbers of Errors per Domain until the scan of this domain ultimately fails |
+| ScanType | 1-5 | Defines for which Protocol the domain is scanned: 1 only HTTPS; 2 only HTTP; 3 Both; 4 Any but HTTPS is preferred; 5 Any but HTTP is preferred |
+| ParallelScans | any positive Integer | Number of scans run simultaneous for this API |
+| LogLevel | same as commandline | Sets the verbosity for this API |
+| APILocation | URL | Base URL of the API |
+| Hidden | boolean | If true, results are not published on the website |
+| Rescan | boolean | If true, cached results are not used |

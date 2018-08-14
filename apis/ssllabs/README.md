@@ -167,3 +167,17 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
    * bit 7 (128) - blacklisted
    * bit 8 (256) - insecure signature
    * bit 9 (512) - insecure key
+
+## Configuration
+
+| Field | Possible Values | Description |
+| ----------- | ----------- | ----------- |
+| Retries | any positive Integer | Numbers of Errors per Domain until the scan of this domain ultimately fails |
+| ScanType | 1-5 | Defines for which Protocol the domain is scanned: 1 only HTTPS; 2 only HTTP; 3 Both; 4 Any but HTTPS is preferred; 5 Any but HTTP is preferred |
+| ParallelScans | any positive Integer | Number of scans run simultaneous for this API |
+| LogLevel | same as commandline | Sets the verbosity for this API |
+| APILocation | URL | Base URL of the API |
+| IgnoreMismatch | boolean | If true, Scans are performed for sites with mismatching certificates |
+| StartNew | boolean | If true, no cached Results are used. |
+| FromCache | boolean | If true, cached Results younger than MaxAge are used. |
+| MaxAge | any positive Integer | Maximum allowed age for cached results in hours |

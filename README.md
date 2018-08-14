@@ -99,8 +99,9 @@ GENERAL OPTIONS
 | -no-sechead | false | Don't use the SecurityHeaders-Scan|
 | -no-ssllabs | false | Don't use the SSLLabs-Scan|
 
-
-
+The APIs can be additionally configured via a config-file in the json-Format. Such a file with the
+default values set, can be found [here](defaultConfig.json). The configuration is explained in the
+README of each [API](apis/README.md) respectively.
 
 All results will be saved in a database. The database as well as the login credentials have to be 
 stored in a file *sql_config.json*. An empty file can be found [here](sql_config.json.example).
