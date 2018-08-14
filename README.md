@@ -73,6 +73,11 @@ Starting a scan with custom configuration
     https-scan -scan -config file
 ```
 
+Starting a scan with domains from a file
+```
+    https-scan -scan -file file
+```
+
 GENERAL OPTIONS
 
 | Option      | Default value | Description |
@@ -108,10 +113,11 @@ Also the logs of the last three calls to the function are stored in the *logs*-f
 The sql-database consists of:
 * a table containing the scan settings for each scan (link),
 * a table containing all domains and their current status (link),
-* a table to log unreachable domains,
+* a table to log unreachable domains (link),
 * and one table per scan-api (two in case of the ssllabs-scan) (link).
 
-The meaning of the entries for each table column can be found in the README for each api.
+The meaning of the entries for each table column can be found in the README for each api. A more in depth
+explanation can be found [here]().
 
 
 ## Structure

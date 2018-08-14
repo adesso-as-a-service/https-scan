@@ -5,5 +5,4 @@ results
 settings.json
 sql_config.json
 *.exe
-domain*
 *.txt
