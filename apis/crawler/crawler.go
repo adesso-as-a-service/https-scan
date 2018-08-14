@@ -32,7 +32,7 @@ type TableRow struct {
 }
 
 // CrawlerMaxRedirects sets the maximum number of Redirects to be followed
-var maxRedirects int = 10
+var maxRedirects = 10
 
 var maxScans = 10
 
@@ -59,7 +59,7 @@ var manager = hooks.Manager{
 	FirstScan:        false,                     //hasn't started first scan
 }
 
-// CrawlerConfig
+// Config contains the configurable Values for this scan
 type Config struct {
 	Retries       int
 	ScanType      int
