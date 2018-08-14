@@ -337,10 +337,6 @@ func main() {
 
 	// configure managers
 	logLevel = hooks.ParseLogLevel(*confVerbosity)
-	// set log level for all managers
-	for _, man := range hooks.ManagerMap {
-		man.LogLevel = logLevel
-	}
 
 	// create output channel
 	outputChannel := make(chan hooks.ScanStatusMessage)
