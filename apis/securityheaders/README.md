@@ -14,6 +14,6 @@ The SecurityHeaders-Scan performs the scan provided by scotthelme ([securityhead
 | XXSSProtection | XXSSProtection-Header of the domain |
 | ContentSecurityPolicy | CSP-Header of the domain |
 | ReferrerPolicy | Referer Policy of the domain |
-| StatusCode | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
+| ScanStatus | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
 
  

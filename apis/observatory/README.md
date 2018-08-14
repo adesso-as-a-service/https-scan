@@ -43,7 +43,7 @@ The Observatory-Scan performs the scan provided by mozilla ([observatory.mozilla
 | XFrameOptionsPassed | Is true, if XFrameOptions test was passed |
 | XFrameOptionsResult | Result of the XFrameOptions test |
 | XFrameOptionsDesc | Description of the result|
-| StatusCode | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
+| ScanStatus | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
 
  
 ## Details

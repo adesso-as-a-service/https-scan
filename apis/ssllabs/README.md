@@ -8,7 +8,7 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
 | Column |  Description |
 | ----------- | ----------- |
 | IP                             | IP of the domain |
-| StartTime                      | Start time of the scan|
+| StartTime                      | Start time of the scan (UTC-Time since epoch)|
 | TestTime                      |  Run time of the scan|
 | Grade                          | Grade of the scan |
 | GradeTrustIgnored              | Grade, if trust issues were ignored|
@@ -42,7 +42,7 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
 | CertificateChainIssues         | See [below](#chain) |
 | CertificateChainLength         | Length of the Certificate Chain |
 | EndEntityCertificateThumbprint | Thumbprint of the EndEntity Certificate|
-| StatusCode | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
+| ScanStatus | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
 
  ## Certificates-Table Columns
 
