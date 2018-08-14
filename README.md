@@ -117,7 +117,7 @@ The sql-database consists of:
 * and one table per scan-api (two in case of the ssllabs-scan) (link).
 
 The meaning of the entries for each table column can be found in the README for each api. A more in depth
-explanation can be found [here]().
+explanation can be found [here](backend/README.md).
 
 
 ## Structure
