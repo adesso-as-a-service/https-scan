@@ -12,6 +12,8 @@ import (
 	_ "./observatory"
 	_ "./securityheaders"
 	_ "./ssllabs"
+	// Example API
+	// _ "./example"
 )
 
 var StatusTime = 4

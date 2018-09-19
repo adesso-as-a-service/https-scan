@@ -112,10 +112,10 @@ Also the logs of the last three calls to the function are stored in the *logs*-f
 ## SQL-Database
 <a name="sql-table"></a>
 The sql-database consists of:
-* a table containing the scan settings for each scan (link),
-* a table containing all domains and their current status (link),
-* a table to log unreachable domains (link),
-* and one table per scan-api (two in case of the ssllabs-scan) (link).
+* a table containing the scan settings for each scan,
+* a table containing all domains and their current status,
+* a table to log unreachable domains,
+* and one table per scan-api (two in case of the ssllabs-scan).
 
 The meaning of the entries for each table column can be found in the README for each api. A more in depth
 explanation can be found [here](backend/README.md).
@@ -136,6 +136,6 @@ If an api doesn't send a status message in 20 seconds, it is assumed dead and th
 
 ## Adding a new API
 
-This will be added later!    
+A short instruction on how to add your own API to the https-scan can be found [here](apis/example).
 
 
