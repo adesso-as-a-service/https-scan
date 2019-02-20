@@ -388,7 +388,7 @@ IF NOT EXISTS (SELECT * FROM %[1]v WHERE Thumbprint = ?)
 		INSERT INTO %[1]v
 		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NextThumbprint, ValidFrom, ValidTo, AltNames)
 		VALUES
-		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	END
 ELSE
 	BEGIN
