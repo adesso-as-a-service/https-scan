@@ -501,10 +501,8 @@ type LabsReport struct {
 	IsPublic        bool
 	Status          string
 	StatusMessage   string
-	StartTime       string
-	TestTime        string
-	Begin			int64
-	TestDuration	int64
+	StartTime       int64
+	TestTime        int64
 	EngineVersion   string
 	CriteriaVersion string
 	CacheExpiryTime int64
