@@ -9,9 +9,10 @@ CREATE TABLE [CertificatesV10](
 	[Issues] [smallint] NULL,
 	[KeyStrength] [smallint] NULL,
 	[DebianInsecure] [bit] NULL,
-	[NotBefore] [bigint] NULL,
-	[NotAfter] [bigint] NULL,
 	[NextThumbprint] [nchar](40) NULL,
+	[ValidFrom] [Datetime] NULL,
+	[ValidTo] [DateTime] NULL,
+	[AltNames] nvarchar(MAX) NULL,
  CONSTRAINT [PK_CertificatesV10] PRIMARY KEY CLUSTERED 
 (
 	[Thumbprint] ASC
