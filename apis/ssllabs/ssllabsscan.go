@@ -141,8 +141,8 @@ func (e LabsErrorResponse) Error() string {
 
 type TableRow struct {
 	IP                             string
-	StartTime                      int64
-	TestTime                       int64
+	StartTime                      string
+	TestTime                       string
 	Grade                          string
 	GradeTrustIgnored              string
 	FutureGrade                    string
@@ -501,8 +501,10 @@ type LabsReport struct {
 	IsPublic        bool
 	Status          string
 	StatusMessage   string
-	StartTime       int64
-	TestTime        int64
+	StartTime       string
+	TestTime        string
+	Begin			int64
+	TestDuration	int64
 	EngineVersion   string
 	CriteriaVersion string
 	CacheExpiryTime int64
@@ -933,8 +935,8 @@ func makeSSLLabsRow(report *LabsReport) *TableRow {
 	details := endpoint.Details
 	row := &TableRow{}
 	row.IP = hooks.Truncate(endpoint.IpAddress, 15)
-	row.StartTime = time.Unix(report.StartTime/1000, 0).Format("2006-01-02 15:04:05") 
-	row.TestTime = time.Unix(report.TestTime/1000, 0).Format("2006-01-02 15:04:05") 
+	row.StartTime = time.Unix(report.StartTime/1000, 0).Format("2006-01-02 15:04:05")
+	row.TestTime = time.Unix(report.TestTime/1000, 0).Format("2006-01-02 15:04:05")
 	row.Grade = hooks.Truncate(endpoint.Grade, 2)
 	row.GradeTrustIgnored = hooks.Truncate(endpoint.GradeTrustIgnored, 2)
 	row.FutureGrade = hooks.Truncate(endpoint.FutureGrade, 2)
