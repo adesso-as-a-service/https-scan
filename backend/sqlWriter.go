@@ -386,14 +386,14 @@ func SaveCertificates(rows []*hooks.CertificateRow, table string) error {
 IF NOT EXISTS (SELECT * FROM %[1]v WHERE Thumbprint = ?)
 	BEGIN
 		INSERT INTO %[1]v
-		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NotBefore, NotAfter, NextThumbprint)
+		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NextThumbprint, ValidFrom, ValidTo, AltNames)
 		VALUES
-		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	END
 ELSE
 	BEGIN
 		UPDATE  %[1]v
-		SET Issues = ?
+		SET Issues = ?, ValidFrom = ?, ValidTo = ?, AltNames = ?
 		WHERE Thumbprint = ?
 	END
 `
@@ -401,7 +401,7 @@ ELSE
 		_, err = globalDatabase.ExecContext(ctx,
 			fmt.Sprintf(query, table),
 			row.Thumbprint, row.Thumbprint, row.SerialNumber, row.Subject, row.Issuer, row.SigAlg, row.RevocationStatus, row.Issues,
-			row.KeyStrength, row.DebianInsecure, row.NotBefore, row.NotAfter, row.NextThumbprint, row.Issues, row.Thumbprint)
+			row.KeyStrength, row.DebianInsecure, row.NextThumbprint, row.ValidFrom, row.ValidTo, row.AltNames, row.Issues, row.ValidFrom, row.ValidTo, row.AltNames, row.Thumbprint)
 		if err != nil {
 			return err
 		}

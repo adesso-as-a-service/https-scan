@@ -3,8 +3,8 @@ https-scan
 
 This tool is a command-line client designed for automated and/or bulk testing of domains with
 the SSL Labs API and other APIs. The tool is based on Qualys' ssllabs-scan which is available
-[here](https://github.com/ssllabs/ssllabs-scan). The scan results can automatically be saved 
-into SQL-Database, if needed.
+here: https://github.com/ssllabs/ssllabs-scan 
+The scan results can automatically be saved into SQL-Database, if needed.
 
 The following APIs are included at the moment:
 
@@ -53,12 +53,12 @@ Removing Domains from a List
     https-scan -list string -file file -remove
 ```
 
-Setting Domains inactive
+Setting Domains inavtive
 ```
     https-scan -domain string -file file -inactive
 ```
 
-Setting Domains active
+Setting Domains avtive
 ```
     https-scan -domain string -file file -inactive
 ```
