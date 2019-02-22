@@ -109,8 +109,12 @@ func openURL(myURL string) (TableRow, error) {
 		results.LastURL = hooks.Truncate(myURL, 200)
 		results.LastStatusCode = int16(resp.StatusCode)
 		urlStr, _ := url.Parse(myURL)
-		myIP, _ := net.LookupIP(urlStr.Hostname())
-		results.IP = hooks.Truncate(myIP[0].String(), 30)
+		myIP, err := net.LookupIP(urlStr.Hostname())
+		if err != nil {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No IP found for %v: %v", results.LastURL , err), manager.LogLevel, hooks.LogError)
+		} else {
+			results.IP = hooks.Truncate(myIP[0].String(), 30)
+		}
 		rCodes = append(rCodes, fmt.Sprintf("%d", resp.StatusCode))
 
 		if resp.StatusCode/100 == 3 {

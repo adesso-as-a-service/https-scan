@@ -162,9 +162,10 @@ type CertificateRow struct {
 	Issues           int16
 	KeyStrength      int16
 	DebianInsecure   bool
-	NotBefore        int64
-	NotAfter         int64
 	NextThumbprint   sql.NullString
+	ValidFrom        string
+	ValidTo          string
+	AltNames         string
 }
 
 type DomainsRowMetaInfo struct {

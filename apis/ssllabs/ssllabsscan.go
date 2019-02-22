@@ -141,8 +141,8 @@ func (e LabsErrorResponse) Error() string {
 
 type TableRow struct {
 	IP                             string
-	StartTime                      int64
-	TestTime                       int64
+	StartTime                      string
+	TestTime                       string
 	Grade                          string
 	GradeTrustIgnored              string
 	FutureGrade                    string
@@ -907,15 +907,16 @@ func makeCertificateRows(report *LabsReport) []*hooks.CertificateRow {
 		row.Issues = int16(cert.Issues)
 		row.KeyStrength = int16(cert.KeyStrength)
 		row.DebianInsecure = cert.KeyKnownDebianInsecure
-		row.NotAfter = cert.NotAfter
-		row.NotBefore = cert.NotBefore
+		row.ValidTo = time.Unix(cert.NotAfter/1000, 0).Format("2006-01-02 15:04:05")
+		row.ValidFrom = time.Unix(cert.NotBefore/1000, 0).Format("2006-01-02 15:04:05")
+		row.AltNames = strings.Join(cert.AltNames, ", ")
 		if i+1 < chainLength {
 			row.NextThumbprint = sql.NullString{
 				String: hooks.Truncate(report.Certs[i+1].Sha1Hash, 40),
 				Valid:  true,
 			}
 		}
-
+		
 		res = append([]*hooks.CertificateRow{row}, res...)
 	}
 	return res
@@ -932,8 +933,8 @@ func makeSSLLabsRow(report *LabsReport) *TableRow {
 	details := endpoint.Details
 	row := &TableRow{}
 	row.IP = hooks.Truncate(endpoint.IpAddress, 15)
-	row.StartTime = report.StartTime
-	row.TestTime = report.TestTime
+	row.StartTime = time.Unix(report.StartTime/1000, 0).Format("2006-01-02 15:04:05")
+	row.TestTime = time.Unix(report.TestTime/1000, 0).Format("2006-01-02 15:04:05")
 	row.Grade = hooks.Truncate(endpoint.Grade, 2)
 	row.GradeTrustIgnored = hooks.Truncate(endpoint.GradeTrustIgnored, 2)
 	row.FutureGrade = hooks.Truncate(endpoint.FutureGrade, 2)
