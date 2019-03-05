@@ -34,7 +34,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	"io"
 
 	"../../backend"
 	"../../hooks"
