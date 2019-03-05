@@ -220,6 +220,10 @@ func (status *ScanStatus) GetFatalErrorScans() int32 {
 	return atomic.LoadInt32(&status.FatalErrorScans)
 }
 
+func (status *ScanStatus) GetRemainingScans() int32 {
+	return (status.GetFatalErrorScans()+status.GetFinishedScans()- status.GetTotalScans())
+}
+
 func Truncate(str string, trLen int) string {
 	if len(str) > trLen {
 		return str[:trLen]

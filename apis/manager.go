@@ -112,7 +112,7 @@ func handleScans(manager *hooks.Manager, domains []hooks.DomainsReachable, inter
 
 // testFinished checks if all tests have been completed
 func testFinished(manager *hooks.Manager, domains []hooks.DomainsReachable) bool {
-	if manager.Status.GetCurrentScans() == 0 && manager.FirstScan {
+	if manager.Status.GetRemainingScans() == 0 && manager.FirstScan {
 		if len(domains) != 0 && len(manager.Errors) != 0 {
 			if manager.FinishError >= finishErrorLimit {
 				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Exceeded finishErrorLimit: errorcount: %d limit: %d", manager.FinishError, finishErrorLimit), manager.LogLevel, hooks.LogCritical)
