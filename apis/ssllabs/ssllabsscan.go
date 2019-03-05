@@ -594,11 +594,9 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				}
 			}
 
-			// Retrieve the response body.
-
-			defer resp.Body.Close()
-
 			body, err := ioutil.ReadAll(resp.Body)
+			io.Copy(ioutil.Discard, response.Body)
+			response.Body.Close()
 			if err != nil {
 				return nil, nil, err
 			}

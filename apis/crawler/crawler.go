@@ -130,8 +130,10 @@ func openURL(myURL string) (TableRow, error) {
 				}
 			}
 			i++
+			io.Copy(ioutil.Discard, resp.Body)
 			resp.Body.Close()
 		} else {
+			io.Copy(ioutil.Discard, resp.Body)
 			resp.Body.Close()
 			break
 		}

@@ -335,10 +335,13 @@ func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
 			return AnalyzeResult{}, err
 		}
-		defer response.Body.Close()
+		
+		
 		analyzeBody, err := ioutil.ReadAll(response.Body)
 		err = json.Unmarshal(analyzeBody, &analyzeResult)
 
+		io.Copy(ioutil.Discard, response.Body)
+		response.Body.Close()
 		if err != nil {
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling analyzeBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
 			return AnalyzeResult{}, err

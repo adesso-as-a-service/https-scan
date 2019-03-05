@@ -272,16 +272,20 @@ func invokeSecurityHeaders(host string, supportsSSL bool) (TableRow, error) {
 	if err != nil {
 		return TableRow{}, err
 	}
-	defer response.Body.Close()
+
+
 	if response.StatusCode != http.StatusOK {
 		if manager.LogLevel >= hooks.LogError {
 			log.Printf("[ERROR] securityheaders.io returned non-200 status for host %v : %v", host, response.Status)
 		}
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Returned non-200 status for host %v : %v", host, response.Status), manager.LogLevel, hooks.LogError)
 		err = errors.New("security Header Assessment failed")
+		io.Copy(ioutil.Discard, response.Body)
+		response.Body.Close()
 		return TableRow{}, err
 	}
-
+	io.Copy(ioutil.Discard, response.Body)
+	response.Body.Close()
 	// The grading done by securityheaders.io is Base64-encoded, so we decode it and get a JSON object
 	grade := response.Header.Get("X-Grade")
 	if grade == "" {
