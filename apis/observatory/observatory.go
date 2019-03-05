@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"strconv"

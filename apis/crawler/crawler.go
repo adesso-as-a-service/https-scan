@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"io/ioutil"
+	"io"
 
 	"github.com/fatih/structs"
 

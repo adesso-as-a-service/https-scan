@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"io"
 
 	"../../backend"
 	"../../hooks"
@@ -595,8 +596,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 			}
 
 			body, err := ioutil.ReadAll(resp.Body)
-			io.Copy(ioutil.Discard, response.Body)
-			response.Body.Close()
+			resp.Body.Close()
 			if err != nil {
 				return nil, nil, err
 			}

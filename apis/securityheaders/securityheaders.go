@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"io/ioutil"
 
 	"../../backend"
 	"../../hooks"
