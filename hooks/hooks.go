@@ -221,7 +221,7 @@ func (status *ScanStatus) GetFatalErrorScans() int32 {
 }
 
 func (status *ScanStatus) GetRemainingScans() int32 {
-	return (status.GetFatalErrorScans()+status.GetFinishedScans()- status.GetTotalScans())
+	return (status.GetFatalErrorScans() + status.GetFinishedScans() - status.GetTotalScans())
 }
 
 func Truncate(str string, trLen int) string {
@@ -319,8 +319,9 @@ func buildLoggers() {
 	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
 	if err != nil {
 		LogWriter = os.Stdout
+	} else {
+		LogWriter = io.MultiWriter(file, os.Stdout)
 	}
-	LogWriter = io.MultiWriter(file, os.Stdout)
 
 	files, err := ioutil.ReadDir("log")
 
