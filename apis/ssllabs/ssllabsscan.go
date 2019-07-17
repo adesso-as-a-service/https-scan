@@ -765,7 +765,13 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 		time.Sleep(5 * time.Second)
 	}
 	scan.Results = report
-	scan.StatusCode = hooks.StatusDone
+	if myResponse.Status == "READY" {
+		scan.StatusCode = hooks.StatusDone
+	} else {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: Received ERROR-Response from ssllabs-API: %v", scan.Domain.DomainName, report.StatusMessage), manager.LogLevel, hooks.LogError)
+		scan.StatusCode = hooks.StatusError
+	}
+
 	internalChannel <- scan
 }
 
@@ -913,7 +919,7 @@ func makeCertificateRows(report *LabsReport) []*hooks.CertificateRow {
 				Valid:  true,
 			}
 		}
-		
+
 		res = append([]*hooks.CertificateRow{row}, res...)
 	}
 	return res
