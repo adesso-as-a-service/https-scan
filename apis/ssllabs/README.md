@@ -61,6 +61,7 @@ The SSLLabs-Scan performs the scan provided by Qualys ([ssllabs.com](https://www
 | NotBefore        | Not valid before  |
 | NotAfter         |  Not valid after|
 | NextThumbprint |  Thumbprint of the signing certificate |
+| NextAssessmentCooloff |  Minimum timespan between the start of two assessments |
 
 
 ## Details
