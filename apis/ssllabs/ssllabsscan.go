@@ -765,7 +765,7 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 		time.Sleep(5 * time.Second)
 	}
 	scan.Results = report
-	if myResponse.Status == "READY" {
+	if report.Status == "READY" {
 		scan.StatusCode = hooks.StatusDone
 	} else {
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: Received ERROR-Response from ssllabs-API: %v", scan.Domain.DomainName, report.StatusMessage), manager.LogLevel, hooks.LogError)
