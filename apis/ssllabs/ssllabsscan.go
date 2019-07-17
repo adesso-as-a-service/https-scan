@@ -67,28 +67,30 @@ var manager = hooks.Manager{
 
 // CrawlerConfig
 type Config struct {
-	Retries        int
-	ScanType       int
-	ParallelScans  int
-	LogLevel       string
-	APILocation    string
-	IgnoreMismatch bool
-	StartNew       bool
-	FromCache      bool
-	MaxAge         int
+	Retries              int
+	ScanType             int
+	ParallelScans        int
+	LogLevel             string
+	APILocation          string
+	IgnoreMismatch       bool
+	StartNew             bool
+	FromCache            bool
+	MaxAge               int
+	NewAssessmentCoolOff int
 }
 
 // defaultConfig
 var currentConfig = Config{
-	Retries:        3,
-	ScanType:       hooks.ScanOnlySSL,
-	ParallelScans:  10,
-	LogLevel:       "info",
-	APILocation:    "https://api.ssllabs.com/api/v3",
-	IgnoreMismatch: true,
-	StartNew:       false,
-	FromCache:      true,
-	MaxAge:         24,
+	Retries:              3,
+	ScanType:             hooks.ScanOnlySSL,
+	ParallelScans:        10,
+	LogLevel:             "info",
+	APILocation:          "https://api.ssllabs.com/api/v3",
+	IgnoreMismatch:       true,
+	StartNew:             false,
+	FromCache:            true,
+	MaxAge:               24,
+	NewAssessmentCoolOff: 1100,
 }
 
 var USER_AGENT = "ssllabs-scan v1.5.0 (dev $Id$)"
@@ -103,7 +105,7 @@ var requestCounter uint64
 
 var APILocation = "https://api.ssllabs.com/api/v3"
 
-var newAssessmentCoolOff int64 = 1100
+var newAssessmentCoolOff int64 = currentConfig.NewAssessmentCoolOff
 
 var ignoreMismatch = true
 
@@ -1065,6 +1067,7 @@ func parseConfig(config interface{}) {
 	maxAge = currentConfig.MaxAge
 	startNew = currentConfig.StartNew
 	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
+	newAssessmentCoolOff = currentConfig.NewAssessmentCoolOff
 }
 
 func continueScan(scan hooks.ScanRow) bool {

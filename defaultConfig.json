@@ -17,7 +17,8 @@
         "IgnoreMismatch": true,
         "StartNew": false,
         "FromCache": true,
-        "MaxAge": 24
+        "MaxAge": 24,
+        "NewAssessmentCoolOff": 1100
     },
     "Observatory": {
         "Retries": 3,
