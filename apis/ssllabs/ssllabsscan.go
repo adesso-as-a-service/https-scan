@@ -76,7 +76,7 @@ type Config struct {
 	StartNew             bool
 	FromCache            bool
 	MaxAge               int
-	NewAssessmentCoolOff int
+	NewAssessmentCoolOff int64
 }
 
 // defaultConfig
