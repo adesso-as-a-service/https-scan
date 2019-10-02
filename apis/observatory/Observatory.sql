@@ -40,6 +40,9 @@ CREATE TABLE [ObservatoryV10](
 	[XFrameOptionsPassed] [bit] NULL,
 	[XFrameOptionsResult] [nvarchar](100) NULL,
 	[XFrameOptionsDesc] [nvarchar](250) NULL,
+	[ReferrerPolicyPassed] [bit] NULL,
+	[ReferrerPolicyDesc] [nvarchar](100) NULL,
+	[ReferrerPolicyResult] [nvarchar](250) NULL,
  CONSTRAINT [PK_ObservatoryV10] PRIMARY KEY CLUSTERED 
 (
 	[ScanID] ASC,

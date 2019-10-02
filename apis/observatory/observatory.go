@@ -69,6 +69,11 @@ type TableRow struct {
 	XXSSProtectionDesc   string
 
 	ScanStatus int
+
+	//referrer-policy
+	ReferrerPolicyPassed	bool
+	ReferrerPolicyResult	string
+	ReferrerPolicyDesc		string
 }
 
 // maximum Number of parallel Scans
@@ -312,6 +317,21 @@ type ScanResults struct {
 		ScoreDescription string `json:"score_description"`
 		ScoreModifier    int    `json:"score_modifier"`
 	} `json:"x-xss-protection"`
+
+	//referrer-policy
+	ReferrerPolicy struct{
+		Expectation string `json:"expectation"`
+		Name        string `json:"name"`
+		Output      struct {
+			Data	interface{} `json:"data"`
+			Http	bool		`json:"http"`
+			Meta	bool		`json:"meta"`
+		} `json:"output"`
+		Pass             bool   `json:"pass"`
+		Result           string `json:"result"`
+		ScoreDescription string `json:"score_description"`
+		ScoreModifier    int    `json:"score_modifier"`
+	} `json:"referrer-policy"`
 }
 
 // invokeObservatoryAnalyzation starts an HTTP-Observatory assessment and polls
@@ -524,6 +544,12 @@ func parseResult(obsResult ScanResults, obsAnaly AnalyzeResult) TableRow {
 	row.XXSSProtectionPassed = obsResult.XXSSProtection.Pass
 	row.XXSSProtectionDesc = hooks.Truncate(obsResult.XXSSProtection.ScoreDescription, 250)
 	row.XXSSProtectionResult = hooks.Truncate(obsResult.XXSSProtection.Result, 100)
+
+	//referrer-policy
+	row.ReferrerPolicyPassed = obsResult.ReferrerPolicy.Pass
+	row.ReferrerPolicyDesc = hooks.Truncate(obsResult.ReferrerPolicy.ScoreDescription, 250)
+	row.ReferrerPolicyResult = hooks.Truncate(obsResult.ReferrerPolicy.Result, 100)
+
 	return row
 }
 
