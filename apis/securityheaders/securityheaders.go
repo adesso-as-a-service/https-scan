@@ -81,6 +81,9 @@ type TableRow struct {
 func getTextExcerpt(tableContent string, tableName string) string {
 
 	beginOfTable := strings.Index(tableContent, tableName)
+	if beginOfTable == -1 {
+		return ""
+	}
 	table := tableContent[beginOfTable:]
 	endOfTable := strings.Index(table, "</table>")
 	table = table[:endOfTable]
