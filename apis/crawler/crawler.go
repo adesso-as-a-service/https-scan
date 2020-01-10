@@ -24,19 +24,25 @@ import (
 
 // TableRow represents the scan results for the crawler table
 type TableRow struct {
-	Redirects      int
-	StatusCodes    string
-	URLs           string
-	LastStatusCode int16
-	LastURL        string
-	IP             string
-	ScanStatus     int
+	Redirects           int
+	StatusCodes         string
+	URLs                string
+	LastStatusCode 	    int16
+	LastURL             string
+	IP                  string
+	ScanStatus          int
+	RetriesStatuscode   int
 }
 
 // CrawlerMaxRedirects sets the maximum number of Redirects to be followed
 var maxRedirects = 10
 
 var maxScans = 10
+
+// Test 3 times, if there is a status code of 5**
+var maxRetriesStatusCode = 2
+// the time to wait between to HTTP(S) requests
+var timeToWaitRetriesStatusCode = 10
 
 var used *bool
 
@@ -87,7 +93,7 @@ func getBaseURL(myURL string) string {
 	return u.String()
 }
 
-func openURL(myURL string) (TableRow, error) {
+func openURL(myURL string, currentRetries int) (TableRow, error) {
 	var urls []string
 	var rCodes []string
 	var results TableRow
@@ -144,6 +150,7 @@ func openURL(myURL string) (TableRow, error) {
 	results.URLs = hooks.Truncate(strings.Join(urls, "->"), 1000)
 	results.StatusCodes = hooks.Truncate(strings.Join(rCodes, "->"), 50)
 	results.Redirects = len(urls) - 1
+	results.RetriesStatuscode = currentRetries
 
 	return results, nil
 }
@@ -216,12 +223,33 @@ func handleResults(result hooks.InternalMessage) {
 
 func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
 	var url string
+	var row TableRow
+	var err error
+	var i = 0
+
 	if scan.Domain.TestWithSSL {
 		url = "https://" + scan.Domain.DomainName
 	} else {
 		url = "http://" + scan.Domain.DomainName
 	}
-	row, err := openURL(url)
+
+	for i <= maxRetriesStatusCode { 
+		row, err = openURL(url, i)
+		if row.LastStatusCode < 500 {
+			break
+		}
+		time.Sleep(time.Duration(timeToWaitRetriesStatusCode) * time.Second)
+
+		if i < maxRetriesStatusCode {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Error status code feedback for %v: %d. Retry %d times", url, row.LastStatusCode, maxRetriesStatusCode - i ), manager.LogLevel, hooks.LogError)
+		} else {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Error status code feedback for %v: %d. Stop retrying", url, row.LastStatusCode ), manager.LogLevel, hooks.LogError)
+		}
+		
+		i++
+		
+	}
+
 	//Ignore mismatch
 	if err != nil {
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)

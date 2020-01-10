@@ -10,6 +10,7 @@ CREATE TABLE [CrawlerV10](
 	[LastStatusCode] [smallint] NULL,
 	[LastURL] [nvarchar](200) NULL,
 	[IP] [nvarchar](30) NULL,
+	[RetriesStatuscode] [tinyint] NULL,
  CONSTRAINT [PK_CrawlerV10] PRIMARY KEY CLUSTERED 
 (
 	[ScanID] ASC,

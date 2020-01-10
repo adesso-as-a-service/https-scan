@@ -3,6 +3,10 @@ Redirection-Crawler
 
 The redirection crawler follows all the redirects of a domain, while saving
 the corresponding domains and their returned status code.
+If the status code is >= 500 the crwaler tries 2 more times to get a status
+code under 500. If there is a request with a statuscode under 500 the data
+will taken. If the webserver send all 3 times a status code >= 500 the data
+from the last request will taken.
 
 ## Table Columns
 
@@ -15,7 +19,7 @@ the corresponding domains and their returned status code.
 | LastStatusCode | Last status code that was returned |
 | LastURL | Last crawled URL |
 | ScanStatus | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
-
+| RetriesStatuscode | Number of tests if a status code is over/equals 500 (max = 2)|
 
 ## Configuration
 
