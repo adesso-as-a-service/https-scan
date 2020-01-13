@@ -11,6 +11,10 @@ CREATE TABLE [SecurityHeadersV10](
 	[XXSSProtection] [nvarchar](300) NULL,
 	[ContentSecurityPolicy] [nvarchar](300) NULL,
 	[ReferrerPolicy] [nvarchar](300) NULL,
+	[FeaturePolicy] [nvarchar](300) NULL,
+	[ExpectCT] [nvarchar](300) NULL,
+	[ReportTo] [nvarchar](300) NULL,
+	[NEL] [nvarchar](300) NULL,
  CONSTRAINT [PK_SecurityHeadersV10] PRIMARY KEY CLUSTERED 
 (
 	[ScanID] ASC,

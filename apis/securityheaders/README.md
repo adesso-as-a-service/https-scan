@@ -14,6 +14,10 @@ The SecurityHeaders-Scan performs the scan provided by scotthelme ([securityhead
 | XXSSProtection | XXSSProtection-Header of the domain |
 | ContentSecurityPolicy | CSP-Header of the domain |
 | ReferrerPolicy | Referer Policy of the domain |
+| FeaturePolicy | FeaturePolicy of the domain |
+| ExpectCT | ExpectCT of the domain |
+| ReportTo | ReportTo of the domain |
+| NEL | NEL of the domain |
 | ScanStatus | Pending: 0, Done: 1, Ignored: 2, Error: 255 |
 
  
