@@ -42,7 +42,6 @@ Copy the file sql_config.json.example to sql_config.json.
 It must have the same location as the exe.
 Example content:
 ```
-copy sql_config.json.example sql_config.json
 {
     "SQLServer": "localhost\\SQLEXPRESS",
     "SQLUserID": "myUser",
@@ -53,6 +52,7 @@ copy sql_config.json.example sql_config.json
 ```
 
 Befor running create the table in this order:
+```
   1 . backend\tables\Scans.sql
   2 . backend\tables\Domains.sql
   3 . backend\tables\Customers.sql
@@ -65,6 +65,7 @@ Befor running create the table in this order:
   9 . apis\securityheaders\SecuriyHeaders.sql
  10 . apis\ssllabs\Certificates.sql
  11 . apis\ssllabs\SSLLabs.sql
+```
 
 ## Usage 
 
