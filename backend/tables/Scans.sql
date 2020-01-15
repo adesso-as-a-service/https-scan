@@ -1,4 +1,4 @@
-CREATE TABLE [Scans](
+CREATE TABLE [dbo].[Scans](
 	[ScanID] [int] IDENTITY(1,1) NOT NULL,
 	[SSLLabs] [bit] NOT NULL,
 	[SSLLabsVersion] [nvarchar](4) NULL,
@@ -20,5 +20,7 @@ CREATE TABLE [Scans](
 ) ON [PRIMARY]
 GO
 
-ALTER TABLE [Scans] ADD  CONSTRAINT [DF_Scans_StartTime]  DEFAULT (getdate()) FOR [StartTime]
+ALTER TABLE [dbo].[Scans] ADD  CONSTRAINT [DF_Scans_StartTime]  DEFAULT (getdate()) FOR [StartTime]
 GO
+
+

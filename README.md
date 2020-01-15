@@ -21,6 +21,51 @@ Additionally a crawler was added to check the redirects of a domain.
 * Tested with go 10.3
 * A running MSSQL-database with the tables as specified [below](#sql-table)
 
+## Installtion
+
+Run the commands:
+```
+    # Download project
+    git clone https://github.com/smarthouse/https-scan
+    
+    cd https-scan
+    
+    # Download dependencies
+    go get github.com/denisenkom/go-mssqldb
+    go get github.com/fatih/structs
+    
+    # Create Exe
+    go build
+```
+
+Copy the file sql_config.json.example to sql_config.json.
+It must have the same location as the exe.
+Example content:
+```
+copy sql_config.json.example sql_config.json
+{
+    "SQLServer": "localhost\\SQLEXPRESS",
+    "SQLUserID": "myUser",
+    "SQLPassword": "MyPw",
+    "SQLDatabase": "myDb",
+    "SQLEncryption": "disable"
+}
+```
+
+Befor running create the table in this order:
+  1 . backend\tables\Scans.sql
+  2 . backend\tables\Domains.sql
+  3 . backend\tables\Customers.sql
+  4 . backend\tables\Project.sql
+  5 . backend\tables\Domain_Project.sql
+  6 . backend\tables\Unreachable.sql
+
+  7 . apis\crawler\Crawler.sql
+  8 . apis\observatory\Observatory.sql
+  9 . apis\securityheaders\SecuriyHeaders.sql
+ 10 . apis\ssllabs\Certificates.sql
+ 11 . apis\ssllabs\SSLLabs.sql
+
 ## Usage 
 
 SYNOPSIS
