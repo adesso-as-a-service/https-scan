@@ -52,20 +52,19 @@ Example content:
 ```
 
 Befor running create the table in this order:
-```
-  1 . backend\tables\Scans.sql
-  2 . backend\tables\Domains.sql
-  3 . backend\tables\Customers.sql
-  4 . backend\tables\Project.sql
-  5 . backend\tables\Domain_Project.sql
-  6 . backend\tables\Unreachable.sql
+  1. backend\tables\Scans.sql
+  2. backend\tables\Domains.sql
+  3. backend\tables\Customers.sql
+  4. backend\tables\Project.sql
+  5. backend\tables\Domain_Project.sql
+  6. backend\tables\Unreachable.sql
 
-  7 . apis\crawler\Crawler.sql
-  8 . apis\observatory\Observatory.sql
-  9 . apis\securityheaders\SecuriyHeaders.sql
- 10 . apis\ssllabs\Certificates.sql
- 11 . apis\ssllabs\SSLLabs.sql
-```
+  7. apis\crawler\Crawler.sql
+  8. apis\observatory\Observatory.sql
+  9. apis\securityheaders\SecuriyHeaders.sql
+ 10. apis\ssllabs\Certificates.sql
+ 11. apis\ssllabs\SSLLabs.sql
+
 
 ## Usage 
 
