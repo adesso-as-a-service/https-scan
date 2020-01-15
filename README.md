@@ -140,6 +140,7 @@ GENERAL OPTIONS
 | -force | false | Force overwrite, if there are conflicting adds|
 | -inactive | false | Set the given domains to inactive (only active domains are scanned)|
 | -list | | Field to specify the domains belonging to a ListID |
+| -project | | Field to specify the domains belonging to a project (project id) |
 | -remove | false | Remove the given domains from the specified ListID |
 | -scan | false | Scan the given domains|
 | -verbosity | info | Configure log verbosity: error, notice, info, debug, or trace|
