@@ -11,7 +11,7 @@ GO
 
 
 
-CREATE VIEW [dbo].[NewCompleteResult]
+CREATE VIEW [dbo].[CompleteResult]
 AS
 SELECT 
 	dbo.Scans.ScanID, 
@@ -113,6 +113,10 @@ SELECT
 	dbo.TestAggregator.ReferrerPolicyPassed, 
 	dbo.TestAggregator.ReferrerPolicyResult, 
 	dbo.TestAggregator.ReferrerPolicyDesc, 
+	dbo.TestAggregator.FeaturePolicy, 
+	dbo.TestAggregator.ExpectCT, 
+	dbo.TestAggregator.ReportTo,
+	dbo.TestAggregator.NEL, 
 	dbo.CertificatesV10.SerialNumber AS CertificateSerialNumber, 
 	dbo.CertificatesV10.Subject AS CertificateSubject, 
 	dbo.CertificatesV10.Issuer AS CertificateIssuer, 
