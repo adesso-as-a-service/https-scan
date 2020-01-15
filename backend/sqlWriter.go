@@ -536,6 +536,19 @@ func ScanDomainsWithListID(list string) error {
 	return nil
 }
 
+// ScanDomainsWithProjectID adds all domains with the specified ProjectId to the nextScan
+func ScanDomainsWithProjectID(projectId string) error {
+	_, err := globalDatabase.Exec(
+		"Update Domains "+
+			"Set nextScan = 1 WHERE DomainId in (SELECT Domains.DomainID FROM Domains "+
+			"JOIN Domain_Project ON Domains.DomainID = Domain_Project.DomainID "+
+			"WHERE ProjectID = ?)", projectId)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // ActiveDomainsWithDomain changes the isActive field to the specified value for the given domain
 func ActiveDomainsWithDomain(active bool, domain string) error {
 	_, err := globalDatabase.Exec(

@@ -123,6 +123,11 @@ Starting a scan with domains from a file
     https-scan -scan -file file
 ```
 
+Starting a scan with domains from a project id
+```
+    https-scan -scan -project projectId
+```
+
 GENERAL OPTIONS
 
 | Option      | Default value | Description |

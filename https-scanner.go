@@ -151,7 +151,7 @@ func conflictAdd(domains []string, list string) error {
 }
 
 // parseSettings parses the command line flags and performs the corresponding tasks
-func parseSettings(list string, file string, domain string, scan bool, add bool, remove bool, inactive bool, active bool) (bool, error) {
+func parseSettings(list string, file string, domain string, scan bool, add bool, remove bool, inactive bool, active bool, project string) (bool, error) {
 	if add && remove {
 		return false, fmt.Errorf("Can't -remove and -add at the same time")
 	}
@@ -191,8 +191,17 @@ func parseSettings(list string, file string, domain string, scan bool, add bool,
 		return false, err
 	}
 
-	if len(domains) == 0 && list == "" {
-		return false, fmt.Errorf("No domains or ListID have been specified")
+	if len(domains) == 0 && list == "" && project == "" {
+		return false, fmt.Errorf("No domains, ListID or project have been specified")
+	} else if project != "" {
+		if scan {
+			// set up scan and return true
+			err := backend.ScanDomainsWithProjectID(project)
+			return true, err
+		} else {
+			return false, fmt.Errorf("Projects only scannable")
+		}
+
 	} else if len(domains) == 0 {
 		if add {
 			return false, fmt.Errorf("Adding List: %s to List: %s makes no sense", list, list)
@@ -308,6 +317,7 @@ func main() {
 	var confList = flag.String("list", "", "Specify a ListID")
 	var confFile = flag.String("file", "", "Specify a file containing multiple domains (separated by linebreak)")
 	var confDomain = flag.String("domain", "", "Specify a single domain")
+	var confProject = flag.String("project", "", "Specify a project name")
 
 	var confScan = flag.Bool("scan", false, "Scan the given domains")
 	var confAdd = flag.Bool("add", false, "Add the given domains to the specified ListID")
@@ -377,7 +387,7 @@ func main() {
 
 	if !*confContinue {
 		// parse Input settings
-		test, err := parseSettings(*confList, *confFile, *confDomain, *confScan, *confAdd, *confRemove, *confInactive, *confActive)
+		test, err := parseSettings(*confList, *confFile, *confDomain, *confScan, *confAdd, *confRemove, *confInactive, *confActive, *confProject)
 		if err != nil {
 			logger.Fatal(err)
 		}
