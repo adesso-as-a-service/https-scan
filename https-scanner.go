@@ -50,6 +50,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 		return scan, err
 	}
 	infoLogger.Printf("---------------------------------------------------------------------------------------------------\nStarting Scan with ScanID %d\n---------------------------------------------------------------------------------------------------", scan.ScanID)
+
 	domains, err := backend.GetDomains()
 	if err != nil {
 		return scan, err
@@ -317,7 +318,7 @@ func main() {
 	var confList = flag.String("list", "", "Specify a ListID")
 	var confFile = flag.String("file", "", "Specify a file containing multiple domains (separated by linebreak)")
 	var confDomain = flag.String("domain", "", "Specify a single domain")
-	var confProject = flag.String("project", "", "Specify a project name")
+	var confProject = flag.String("project", "", "Specify a project id")
 
 	var confScan = flag.Bool("scan", false, "Scan the given domains")
 	var confAdd = flag.Bool("add", false, "Add the given domains to the specified ListID")
@@ -440,6 +441,14 @@ scan:
 				infoLogger.Printf("---------------------------------------------------------------------------------------------------\nScan with ScanID %d is done\n---------------------------------------------------------------------------------------------------", currentScan.ScanID)
 				currentScan.Done = true
 				backend.UpdateScan(currentScan)
+
+				err := backend.RemoveIgnored(currentScan)
+				if err != nil {
+					hooks.LogIfNeeded(logger, fmt.Sprintf("Cannot delete ignored results"), logLevel, hooks.LogError)
+				} else {
+					hooks.LogIfNeeded(logger, fmt.Sprintf("Ignored results are deleted"), logLevel, hooks.LogInfo)
+				}
+				
 				break scan
 			}
 		}

@@ -65,6 +65,7 @@ Befor running create the table in this order:
  10. apis\ssllabs\Certificates.sql
  11. apis\ssllabs\SSLLabs.sql
 
+Or just run backend\install.sql.
 
 ## Usage 
 

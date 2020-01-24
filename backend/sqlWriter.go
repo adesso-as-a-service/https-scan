@@ -378,6 +378,17 @@ func UpdateScan(scan hooks.ScanRow) error {
 	return err
 }
 
+// Remove results with ScanStgatus ignored (2)
+func RemoveIgnored(scan hooks.ScanRow) error {
+	var err error
+	// Currently onle SSLLabs, because its the olny one which use staurs ignored
+	_, err = globalDatabase.Exec(
+		"DELETE FROM  "+
+			"SSLLabsV10 "+
+			" WHERE ScanStatus = ? AND ScanID = ?", hooks.StatusIgnored, scan.ScanID)
+	return err
+}
+
 // SaveCertificates stores all given Certificates in the Table, while avoiding duplicate entries
 func SaveCertificates(rows []*hooks.CertificateRow, table string) error {
 	ctx := context.Background()
