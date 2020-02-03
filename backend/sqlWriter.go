@@ -304,6 +304,7 @@ func ReadSQLConfig(file string) (SQLConfiguration, error) {
 func GetDomains() ([]hooks.DomainsRow, error) {
 	var results []hooks.DomainsRow
 	var help hooks.DomainsRow
+	// @IMU Hier NextImu mitauslesen
 	rows, err := globalDatabase.Query(
 		"SELECT DomainID, DomainName " +
 			"FROM Domains WHERE nextScan = 1 AND isActive = 1")

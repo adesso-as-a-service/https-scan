@@ -99,6 +99,7 @@ type ScanData struct {
 type DomainsRow struct {
 	DomainID   int
 	DomainName string
+	// @IMU Feld für nextImu auslesen
 }
 
 // ScanRow represents a row of the ScanTable
