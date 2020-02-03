@@ -68,6 +68,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 		logger.Fatal("There are no domains left to scan after a reachability test!")
 	}
 
+
 	err = backend.InsertScanData(getTablenames(usedTables), scanData)
 	if err != nil {
 		return scan, err

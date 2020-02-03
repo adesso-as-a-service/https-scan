@@ -249,6 +249,7 @@ func getWhereString(whereCond *structs.Struct) (string, []interface{}) {
 
 // InsertScanData adds scanData to the scan-Databases
 func InsertScanData(tables []string, scanData []hooks.ScanData) error {
+	// @IMU sobald verstanden warum 2 Loops -> in den richtigen wenn NextImu 1 einfügen
 	var pos int
 	for pos = maxSQLInserts; pos < len(scanData); pos += maxSQLInserts {
 		for _, tab := range tables {
