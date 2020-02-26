@@ -113,6 +113,8 @@ type ScanRow struct {
 	SecurityHeadersVersion string
 	Crawler                bool
 	CrawlerVersion         string
+	Immuniweb              bool
+	ImmuniwebVersion       string
 	Config                 sql.NullString
 	Unreachable            int
 	Total                  int
