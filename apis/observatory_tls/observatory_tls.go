@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/fatih/structs"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/fatih/structs"
 
 	"../../backend"
 	"../../hooks"
@@ -33,7 +32,65 @@ type TlsObservatoryResult struct {
 	CompletionPerc int       `json:"completion_perc"` // "completion_perc": 100,
 	Ack            bool      `json:"ack"`             // "ack": true,
 	Attempts       int       `json:"attempts"`        // "attempts": 1,
+
+	// The following fields will be filled manually
+	AwsCertLintResult             AwsCertLintResult             `json:"-"`
+	CAAWorkerResult               CAAWorkerResult               `json:"-"`
+	CRLWorkerResult               CRLWorkerResult               `json:"-"`
+	MozillaEvaluationWorkerResult MozillaEvaluationWorkerResult `json:"-"`
+	MozillaGradingWorkerResult    MozillaGradingWorkerResult    `json:"-"`
+	OscpStatusResult              OscpStatusResult              `json:"-"`
+	SSLLabsClientSupportResults   []SSLLabsClientSupportResult  `json:"-"`
+	SymantecDistrustResult        SymantecDistrustResult        `json:"-"`
+	Top1MResult                   Top1MResult                   `json:"-"`
+
 	//AnalysisParams []string  `json:"analysis_params"` // "analysis_params": {} // ToDo: cannot unmarshal object into Go struct field TlsObservatoryResult.analysis_params of type []string
+	Analysis []struct {
+		Id       int    `json:"id"`
+		Analyzer string `json:"analyzer"`
+
+		Success bool `json:"success"`
+
+		Result json.RawMessage `json:"result"`
+
+		//Result struct {
+		//	// awsCertlint
+		//	//bugs
+		//	//errors
+		//	//notices
+		//	//warnings
+		//	//fatalErrors
+		//	//informational
+		//
+		//	// caaWorker
+		//	Host string `json:"host"`
+		//	// issue
+		//	HasCaa bool `json:"has_caa"`
+		//	// issuewild
+		//
+		//	// crlWorker
+		//	Revoked        bool   `json:"revoked"`
+		//	RevocationTime string `json:"RevocationTime"`
+		//
+		//	// mozillaEvaluationWorker
+		//	Level    string `json:"level"`
+		//	Failures struct {
+		//		Bad          []string `json:"bad"`
+		//		Old          []string `json:"old"`
+		//		Modern       []string `json:"modern"`
+		//		Intermediate []string `json:"intermediate"`
+		//	} `json:"failures"`
+		//
+		//	// mozillaGradingWorker
+		//	Grade complex64 `json:"grade"`
+		//	// failures
+		//	Lettergrade string `json:"lettergrade"`
+		//
+		//	// ocspStatus
+		//	Status    int    `json:"status"`
+		//	RevokedAt string `json:"revoked_at"`
+		//} `json:"result"`
+	} `json:"analysis"`
 
 	ConnectionInfo struct {
 		ScanIp     string `json:"scanIP"`     // "scanIP": "85.22.57.97",
@@ -69,14 +126,14 @@ type AwsCertLintResult struct {
 	Informational []string `json:"informational"`
 }
 
-type CaaWorkerResult struct {
+type CAAWorkerResult struct {
 	Host      string `json:"host"`
 	Issue     string `json:"issue"`
 	HasCaa    bool   `json:"has_caa"`
 	Issuewild string `json:"issuewild"`
 }
 
-type CrlWorkerResult struct {
+type CRLWorkerResult struct {
 	Revoked        string    `json:"host"`
 	RevocationTime time.Time `json:"RevocationTime"`
 }
@@ -93,9 +150,10 @@ type MozillaEvaluationWorkerResult struct {
 }
 
 type MozillaGradingWorkerResult struct {
-	Grade       int      `json:"grade"`
-	Failures    []string `json:"failures"`
-	Lettergrade string   `json:"lettergrade"`
+	Grade    float32  `json:"grade"`
+	Failures []string `json:"failures"`
+	//Failures    json.RawMessage `json:"failures"` // ToDo: Can't unmarshal if failures is null instead of empty aray
+	Lettergrade string `json:"lettergrade"`
 }
 
 type OscpStatusResult struct {
@@ -103,7 +161,7 @@ type OscpStatusResult struct {
 	RevokedAt time.Time `json:"revoked_at"`
 }
 
-type SslLabsClientSupportResult struct {
+type SSLLabsClientSupportResult struct {
 	Name            string `json:"name"`
 	Curve           string `json:"curve"`
 	Version         string `json:"version"`
@@ -138,55 +196,101 @@ type Top1MResult struct {
 	} `json:"certificate"`
 }
 
-//	ID                 int    `json:"id"`
-//	SerialNumber       string `json:"serialNumber"`
-//	Version            int8   `json:"version"`
-//	SignatureAlgorithm string `json:"signatureAlgorithm"`
-//
-//	Issuer struct {
-//		ID int      `json:"id"`
-//		C  []string `json:"c"`
-//		O  []string `json:"o"`
-//		CN string   `json:"cn"`
-//	} `json:"issuer"`
-//
-//	Validity struct {
-//		NotBefore time.Time `json:"notBefore"`
-//		NotAfter  time.Time `json:"notAfter"`
-//	} `json:"validity"`
-//
-//	Subject struct {
-//		Cn string `json:"cn"`
-//	} `json:"subject"`
-//
-//	Key struct {
-//		Alg      string `json:"alg"`
-//		Size     int    `json:"size"`
-//		Exponent int    `json:"exponent"`
-//	} `json:"key"`
-//
-//	X509V3Extensions struct {
-//		AuthorityKeyId string `json:"authorityKeyId"`
-//		SubjectKeyId   string `json:"subjectKeyId"`
-//		KeyUsage       struct {
-//		}
-//	} `json:"x509v3Extensions"`
-//}
+type CertificateInfoResult struct {
+	ID                 int    `json:"id"`
+	SerialNumber       string `json:"serialNumber"`
+	Version            int8   `json:"version"`
+	SignatureAlgorithm string `json:"signatureAlgorithm"`
+
+	FirstSeenTimestamp string `json:"firstSeenTimestamp"`
+	LastSeenTimestamp  string `json:"lastSeenTimestamp"`
+
+	Raw               string `json:"Raw"`
+	CiscoUmbrellaRank int    `json:"ciscoUmbrellaRank"`
+
+	Issuer struct {
+		ID int      `json:"id"`
+		C  []string `json:"c"`
+		O  []string `json:"o"`
+		CN string   `json:"cn"`
+	} `json:"issuer"`
+
+	Validity struct {
+		NotBefore string `json:"notBefore"`
+		NotAfter  string `json:"notAfter"`
+	} `json:"validity"`
+
+	Subject struct {
+		CN string `json:"cn"`
+	} `json:"subject"`
+
+	Key struct {
+		Alg      string `json:"alg"`
+		Size     int    `json:"size"`
+		Exponent int    `json:"exponent"`
+	} `json:"key"`
+
+	X509V3Extensions struct {
+		AuthorityKeyId           string   `json:"authorityKeyId"`
+		SubjectKeyId             string   `json:"subjectKeyId"`
+		KeyUsage                 []string `json:"keyUsage"`
+		ExtendedKeyUsage         []string `json:"extendedKeyUsage"`
+		ExtendedKeyUsageOID      []string `json:"extendedKeyUsageOID"`
+		SubjectAlternativeName   []string `json:"subjectAlternativeName"`
+		CrlDistributionPoint     []string `json:"crlDistributionPoint"`
+		PolicyIdentifiers        []string `json:"policyIdentifiers"`
+		IsTechnicallyConstrained bool     `json:"isTechnicallyConstrained"`
+	} `json:"x509v3Extensions"`
+
+	X509V3BasicConstraints string `json:"x509v3BasicConstraints"`
+	CA                     bool   `json:"ca"`
+
+	ValidationInfo struct {
+		ValidationInfoItemMap
+	} `json:"validationInfo"`
+
+	Hashes struct {
+		SHA1                string `json:"sha1"`
+		SHA256              string `json:"sha256"`
+		SPKI_SHA256         string `json:"spki-sha256"`
+		Subject_SPKI_SHA256 string `json:"subject-spki-sha256"`
+		Pin_SHA256          string `json:"pin-sha256"`
+	} `json:"hashes"`
+
+	MozillaPolicyV2_5 struct {
+		IsTechnicallyConstrained bool `json:"IsTechnicallyConstrained"`
+	}
+}
+
+type ValidationInfoItemMap map[string]ValidationInfoItem
+
+type ValidationInfoItem struct {
+	IsValid bool `json:"isValid"`
+}
 
 // TableRow represents the scan results for the crawler table
 type TableRow struct {
-	ScanStatus int
-	//Timestamp      string
-	Target string
-	Replay int
-	HasTls bool
-	//CertId int
-	//TrustId int
-	//Serverside bool
-	IsValid bool
-	//CompletionPerc int
-	//Ack            bool
-	//Attempts       int
+	ScanStatus                       int
+	TestWithSSL                      bool
+	Target                           string
+	ObsScanID                        int
+	EndTime                          string
+	MozillaEvaluationWorker_Level    string
+	MozillaGradingWorker_Grade       float32
+	MozillaGradingWorker_Lettergrade string
+	Cert_CommonName                  string
+	Cert_AlternativeNames            string
+	Cert_FirstObserved               string
+	Cert_ValidFrom                   string
+	Cert_ValidTo                     string
+	Cert_Key                         string
+	Cert_Issuer                      string
+	Cert_SignatureKeyAlgorithm       string
+	HasCAARecord                     bool
+	ServerSideCipherOrdering         bool
+	//SupportedClients                 string
+	//UnsupportedClients               string
+	OCSPStapling bool
 }
 
 // maxRedirects sets the maximum number of Redirects to be followed
@@ -300,11 +404,12 @@ func handleResults(result hooks.InternalMessage) {
 
 }
 
-func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, error) {
+func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, CertificateInfoResult, error) {
 	scanApiURL := currentConfig.APILocation + "/scan"
 
 	var scanRequestResponse ScanRequestResponse
 	var tlsObservatoryResult TlsObservatoryResult
+	var certificateInfoResult CertificateInfoResult
 
 	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Getting TLS observatory analyzation: %v", host), manager.LogLevel, hooks.LogTrace)
 
@@ -314,8 +419,11 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, error) 
 			currentConfig.Rescan,
 			host)))
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error invoking observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogDebug)
-		return TlsObservatoryResult{}, err
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error invoking observatory_tls API for %v : %v", host, err), manager.LogLevel, hooks.LogDebug)
+		return TlsObservatoryResult{}, CertificateInfoResult{}, err
+	} else if response.StatusCode != http.StatusOK {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received non-OK status code %d from observatory_tls API for %v : %v", response.StatusCode, host, err), manager.LogLevel, hooks.LogDebug)
+		return TlsObservatoryResult{}, CertificateInfoResult{}, err
 	}
 
 	analyzeBody, err := ioutil.ReadAll(response.Body)
@@ -332,9 +440,11 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, error) 
 		response, err := http.Get(resultApiURL + fmt.Sprintf("?id=%d", scanRequestResponse.ScanID)) // ToDo: URL formatter
 		if err != nil {
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling TLS Observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
-			return TlsObservatoryResult{}, err
-		} else if response.StatusCode != 200 {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Got non-200 status code from TLS Observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
+		} else if response.StatusCode != http.StatusOK {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Got non-OK status code from TLS Observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
+
 		}
 
 		tlsObservatoryBody, err := ioutil.ReadAll(response.Body)
@@ -343,7 +453,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, error) 
 		response.Body.Close()
 		if err != nil {
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling analyzeBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
-			return TlsObservatoryResult{}, err
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		}
 
 		if tlsObservatoryResult.CompletionPerc < 100 {
@@ -351,30 +461,174 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, error) 
 			continue
 		}
 
-		return tlsObservatoryResult, nil
+		break
+	}
+
+	// unmarshal indiviual results
+	for _, element := range tlsObservatoryResult.Analysis {
+		switch element.Analyzer {
+		case "awsCertlint":
+			var awsCertLintResult AwsCertLintResult
+			err = json.Unmarshal(element.Result, &awsCertLintResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.AwsCertLintResult = awsCertLintResult
+		case "caaWorker":
+			var caaWorkerResult CAAWorkerResult
+			err = json.Unmarshal(element.Result, &caaWorkerResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.CAAWorkerResult = caaWorkerResult
+		case "crlWorker":
+			var crlWorkerResult CRLWorkerResult
+			err = json.Unmarshal(element.Result, &crlWorkerResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.CRLWorkerResult = crlWorkerResult
+		case "mozillaEvaluationWorker":
+			var mozillaEvaluationWorkerResult MozillaEvaluationWorkerResult
+			err = json.Unmarshal(element.Result, &mozillaEvaluationWorkerResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.MozillaEvaluationWorkerResult = mozillaEvaluationWorkerResult
+		case "mozillaGradingWorker":
+			var mozillaGradingWorkerResult MozillaGradingWorkerResult
+			err = json.Unmarshal(element.Result, &mozillaGradingWorkerResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.MozillaGradingWorkerResult = mozillaGradingWorkerResult
+		case "ocspStatus":
+			var oscpStatusResult OscpStatusResult
+			err = json.Unmarshal(element.Result, &oscpStatusResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.OscpStatusResult = oscpStatusResult
+		case "sslLabsClientSupport":
+			var sslLabsClientSupportResults []SSLLabsClientSupportResult
+			err = json.Unmarshal(element.Result, &sslLabsClientSupportResults)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.SSLLabsClientSupportResults = sslLabsClientSupportResults
+		case "symantecDistrust":
+			var symantecDistrustResult SymantecDistrustResult
+			err = json.Unmarshal(element.Result, &symantecDistrustResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.SymantecDistrustResult = symantecDistrustResult
+		case "top1m":
+			var top1MResult Top1MResult
+			err = json.Unmarshal(element.Result, &top1MResult)
+			if err != nil {
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				return TlsObservatoryResult{}, CertificateInfoResult{}, err
+			}
+			tlsObservatoryResult.Top1MResult = top1MResult
+		default:
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Unknown Analyzer scan result %v", element.Analyzer), manager.LogLevel, hooks.LogWarning)
+		}
+	}
+
+	for {
+		certificateInfoApiURL := currentConfig.APILocation + "/certificate"
+
+		response, err := http.Get(certificateInfoApiURL + fmt.Sprintf("?id=%d", tlsObservatoryResult.CertId)) // ToDo: URL formatter
+
+		if err != nil {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling TLS Observatory certificate API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
+		} else if response.StatusCode != http.StatusOK {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Got non-OK status code from TLS Observatory certificate API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
+		}
+
+		certificateInfoBody, err := ioutil.ReadAll(response.Body)
+		err = json.Unmarshal(certificateInfoBody, &certificateInfoResult)
+		io.Copy(ioutil.Discard, response.Body)
+		response.Body.Close()
+		if err != nil {
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling certificateInfoBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
+			return TlsObservatoryResult{}, CertificateInfoResult{}, err
+		}
+
+		return tlsObservatoryResult, certificateInfoResult, nil
 	}
 }
 
-func parseResult(result TlsObservatoryResult) TableRow {
+func parseResult(tlsObservatoryResult TlsObservatoryResult, certificateInfoResult CertificateInfoResult) TableRow {
 	var row TableRow
 
-	//row.Timestamp = result.Timestamp
-	row.Target = result.Target
-	row.Replay = result.Replay
-	row.HasTls = result.HasTls
-	//row.CertId = result.CertId
-	//row.TrustId = result.TrustId
-	//row.Serverside = result.ConnectionInfo.Serverside
-	row.IsValid = result.IsValid
-	//row.CompletionPerc = result.CompletionPerc
-	//row.Ack = result.Ack
-	//row.Attempts = result.Attempts
+	var err error
+	alternativeNamesBytes, err := json.Marshal(certificateInfoResult.X509V3Extensions.SubjectAlternativeName)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+	}
+
+	//supportedClientsBytes, err := json.Marshal(tlsObservatoryResult.SSLLabsClientSupportResults)
+	//if err != nil {
+	//	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+	//}
+	//
+	//unsupportedClientsBytes, err := json.Marshal(tlsObservatoryResult.SSLLabsClientSupportResults)
+	//if err != nil {
+	//	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+	//}
+
+	//firstObserved, err := time.Parse("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", certificateInfoResult.FirstSeenTimestamp)
+	firstObserved, err := time.Parse(time.RFC3339, certificateInfoResult.FirstSeenTimestamp)
+	if err != nil {
+		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to parse FirstSeen timestamp for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+	}
+
+	row.TestWithSSL = true // ToDo: Is this supposed to be set here?
+
+	row.Target = tlsObservatoryResult.Target
+	row.ObsScanID = tlsObservatoryResult.Id
+	row.EndTime = certificateInfoResult.Validity.NotAfter // ToDo: duplicate value?
+	row.MozillaEvaluationWorker_Level = tlsObservatoryResult.MozillaEvaluationWorkerResult.Level
+	row.MozillaGradingWorker_Grade = tlsObservatoryResult.MozillaGradingWorkerResult.Grade
+	row.MozillaGradingWorker_Lettergrade = tlsObservatoryResult.MozillaGradingWorkerResult.Lettergrade
+	row.Cert_CommonName = certificateInfoResult.Subject.CN
+	row.Cert_AlternativeNames = string(alternativeNamesBytes)
+	row.Cert_FirstObserved = firstObserved.Format("2006-01-02 15:04:05")
+	row.Cert_ValidFrom = certificateInfoResult.Validity.NotBefore
+	row.Cert_ValidTo = certificateInfoResult.Validity.NotAfter
+	row.Cert_Key = fmt.Sprintf("%s %d bits", certificateInfoResult.Key.Alg, certificateInfoResult.Key.Size)
+	row.Cert_Issuer = certificateInfoResult.Issuer.CN
+	row.Cert_SignatureKeyAlgorithm = certificateInfoResult.SignatureAlgorithm
+	row.HasCAARecord = tlsObservatoryResult.CAAWorkerResult.HasCaa // ToDo: Prefix
+	row.ServerSideCipherOrdering = tlsObservatoryResult.ConnectionInfo.Serverside
+	//row.SupportedClients = string(supportedClientsBytes)
+	//row.UnsupportedClients = string(unsupportedClientsBytes)
+
+	row.OCSPStapling = false
+	for _, cipherSuite := range tlsObservatoryResult.ConnectionInfo.Ciphersuite {
+		if cipherSuite.OscpStapling {
+			row.OCSPStapling = true
+			break
+		}
+	}
 
 	return row
 }
 
 func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
-	scanRequestResponse, err := invokeObservatoryTLSAnalyzation(scan.Domain.DomainName)
+	scanRequestResponse, certificateInfoResult, err := invokeObservatoryTLSAnalyzation(scan.Domain.DomainName)
 	if err != nil {
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't get results from TLS Observatory API for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
 		scan.Results = TableRow{}
@@ -383,7 +637,7 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 		return
 	}
 
-	row := parseResult(scanRequestResponse)
+	row := parseResult(scanRequestResponse, certificateInfoResult)
 
 	//return results
 	scan.Results = row
