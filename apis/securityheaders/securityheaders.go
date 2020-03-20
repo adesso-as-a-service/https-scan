@@ -168,7 +168,11 @@ func searchForHeaders(rawHeadersContent string, missingHeadersContent string, he
 	if rawHeaders == "not implemented" || missingHeaders != "not implemented" {
 		result = "missing"
 	} else {
-		result = hooks.Truncate(rawHeaders, 300)
+		if headerName == "Content-Security-Policy" {
+				result = hooks.Truncate(rawHeaders, 5000)
+			} else {
+				result = hooks.Truncate(rawHeaders, 300)
+			}
 		result = strings.ReplaceAll(result, "&quot;","\"")
 	}
 	return result
