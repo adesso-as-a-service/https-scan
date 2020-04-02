@@ -7,8 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -71,9 +71,9 @@ type TableRow struct {
 	ScanStatus int
 
 	//referrer-policy
-	ReferrerPolicyPassed	bool
-	ReferrerPolicyResult	string
-	ReferrerPolicyDesc		string
+	ReferrerPolicyPassed bool
+	ReferrerPolicyResult string
+	ReferrerPolicyDesc   string
 }
 
 // maximum Number of parallel Scans
@@ -206,7 +206,7 @@ type ScanResults struct {
 		Name        string `json:"name"`
 		Output      struct {
 			Data     map[string]Cookie
-			SameSite *bool
+			SameSite *json.RawMessage // can be boolean or string
 		} `json:"output"`
 		Pass             bool   `json:"pass"`
 		Result           string `json:"result"`
@@ -319,13 +319,13 @@ type ScanResults struct {
 	} `json:"x-xss-protection"`
 
 	//referrer-policy
-	ReferrerPolicy struct{
+	ReferrerPolicy struct {
 		Expectation string `json:"expectation"`
 		Name        string `json:"name"`
 		Output      struct {
-			Data	interface{} `json:"data"`
-			Http	bool		`json:"http"`
-			Meta	bool		`json:"meta"`
+			Data interface{} `json:"data"`
+			Http bool        `json:"http"`
+			Meta bool        `json:"meta"`
 		} `json:"output"`
 		Pass             bool   `json:"pass"`
 		Result           string `json:"result"`
@@ -356,8 +356,7 @@ func invokeObservatoryAnalyzation(host string) (AnalyzeResult, error) {
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
 			return AnalyzeResult{}, err
 		}
-		
-		
+
 		analyzeBody, err := ioutil.ReadAll(response.Body)
 		err = json.Unmarshal(analyzeBody, &analyzeResult)
 
