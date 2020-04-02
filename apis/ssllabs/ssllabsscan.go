@@ -629,6 +629,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 
 func invokeApi(command string) (*http.Response, []byte, error) {
 	var url = APILocation + "/" + command
+	sleepCounter := 0
 
 	for {
 		resp, body, err := invokeGetRepeatedly(url)
@@ -638,21 +639,25 @@ func invokeApi(command string) (*http.Response, []byte, error) {
 
 		// Status codes 429, 503, and 529 essentially mean try later. Thus,
 		// if we encounter them, we sleep for a while and try again.
-		if resp.StatusCode == 429 {
-			return resp, body, errors.New("Assessment failed: 429")
-		} else if (resp.StatusCode == 503) || (resp.StatusCode == 529) {
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return resp, body, nil
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable, 529:
 			// In case of the overloaded server, randomize the sleep time so
 			// that some clients reconnect earlier and some later.
 
+			if sleepCounter > 5 {
+				return resp, body, errors.New(fmt.Sprintf("Assessment failed for command '%v' with response code %v (slept for too long)", command, resp.StatusCode))
+			}
+			sleepCounter += 1
+
 			sleepTime := 60 + rand.Int31n(60)
 
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Sleeping for %v Seconds after a %v response", sleepTime, resp.StatusCode), manager.LogLevel, hooks.LogNotice)
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Sleeping for %v Seconds after response code %v for command '%v'", sleepTime, resp.StatusCode, command), manager.LogLevel, hooks.LogNotice)
 
 			time.Sleep(time.Duration(sleepTime) * time.Second)
-		} else if (resp.StatusCode != 200) && (resp.StatusCode != 400) {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Unexpected response status code %v", resp.StatusCode), manager.LogLevel, hooks.LogCritical)
-		} else {
-			return resp, body, nil
+		default:
+			return resp, body, errors.New(fmt.Sprintf("Unexpected response status code %v for command '%v'", resp.StatusCode, command))
 		}
 	}
 }
