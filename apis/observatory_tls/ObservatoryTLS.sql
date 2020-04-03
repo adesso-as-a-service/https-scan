@@ -25,8 +25,6 @@ create table ObservatoryTLSV10
     Cert_SignatureKeyAlgorithm       nvarchar(100),
     HasCAARecord                     bit,
     ServerSideCipherOrdering         bit,
---	SupportedClients text,
---	UnsupportedClients text,
     OCSPStapling                     bit,
     constraint ObservatoryTLSV10_pk
         primary key nonclustered (ScanID, DomainID, TestWithSSL)

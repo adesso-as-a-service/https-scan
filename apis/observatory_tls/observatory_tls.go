@@ -52,44 +52,6 @@ type TlsObservatoryResult struct {
 		Success bool `json:"success"`
 
 		Result json.RawMessage `json:"result"`
-
-		//Result struct {
-		//	// awsCertlint
-		//	//bugs
-		//	//errors
-		//	//notices
-		//	//warnings
-		//	//fatalErrors
-		//	//informational
-		//
-		//	// caaWorker
-		//	Host string `json:"host"`
-		//	// issue
-		//	HasCaa bool `json:"has_caa"`
-		//	// issuewild
-		//
-		//	// crlWorker
-		//	Revoked        bool   `json:"revoked"`
-		//	RevocationTime string `json:"RevocationTime"`
-		//
-		//	// mozillaEvaluationWorker
-		//	Level    string `json:"level"`
-		//	Failures struct {
-		//		Bad          []string `json:"bad"`
-		//		Old          []string `json:"old"`
-		//		Modern       []string `json:"modern"`
-		//		Intermediate []string `json:"intermediate"`
-		//	} `json:"failures"`
-		//
-		//	// mozillaGradingWorker
-		//	Grade complex64 `json:"grade"`
-		//	// failures
-		//	Lettergrade string `json:"lettergrade"`
-		//
-		//	// ocspStatus
-		//	Status    int    `json:"status"`
-		//	RevokedAt string `json:"revoked_at"`
-		//} `json:"result"`
 	} `json:"analysis"`
 
 	ConnectionInfo struct {
@@ -152,7 +114,7 @@ type MozillaEvaluationWorkerResult struct {
 type MozillaGradingWorkerResult struct {
 	Grade    float32  `json:"grade"`
 	Failures []string `json:"failures"`
-	//Failures    json.RawMessage `json:"failures"` // ToDo: Can't unmarshal if failures is null instead of empty aray
+	//Failures    json.RawMessage `json:"failures"` // can be null or array
 	Lettergrade string `json:"lettergrade"`
 }
 
@@ -288,9 +250,7 @@ type TableRow struct {
 	Cert_SignatureKeyAlgorithm       string
 	HasCAARecord                     bool
 	ServerSideCipherOrdering         bool
-	//SupportedClients                 string
-	//UnsupportedClients               string
-	OCSPStapling bool
+	OCSPStapling                     bool
 }
 
 // maxRedirects sets the maximum number of Redirects to be followed
@@ -579,16 +539,6 @@ func parseResult(tlsObservatoryResult TlsObservatoryResult, certificateInfoResul
 		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
 	}
 
-	//supportedClientsBytes, err := json.Marshal(tlsObservatoryResult.SSLLabsClientSupportResults)
-	//if err != nil {
-	//	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
-	//}
-	//
-	//unsupportedClientsBytes, err := json.Marshal(tlsObservatoryResult.SSLLabsClientSupportResults)
-	//if err != nil {
-	//	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
-	//}
-
 	//firstObserved, err := time.Parse("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", certificateInfoResult.FirstSeenTimestamp)
 	firstObserved, err := time.Parse(time.RFC3339, certificateInfoResult.FirstSeenTimestamp)
 	if err != nil {
@@ -611,10 +561,8 @@ func parseResult(tlsObservatoryResult TlsObservatoryResult, certificateInfoResul
 	row.Cert_Key = fmt.Sprintf("%s %d bits", certificateInfoResult.Key.Alg, certificateInfoResult.Key.Size)
 	row.Cert_Issuer = certificateInfoResult.Issuer.CN
 	row.Cert_SignatureKeyAlgorithm = certificateInfoResult.SignatureAlgorithm
-	row.HasCAARecord = tlsObservatoryResult.CAAWorkerResult.HasCaa // ToDo: Prefix
+	row.HasCAARecord = tlsObservatoryResult.CAAWorkerResult.HasCaa
 	row.ServerSideCipherOrdering = tlsObservatoryResult.ConnectionInfo.Serverside
-	//row.SupportedClients = string(supportedClientsBytes)
-	//row.UnsupportedClients = string(unsupportedClientsBytes)
 
 	row.OCSPStapling = false
 	for _, cipherSuite := range tlsObservatoryResult.ConnectionInfo.Ciphersuite {
