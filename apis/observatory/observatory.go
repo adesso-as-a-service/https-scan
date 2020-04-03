@@ -146,7 +146,7 @@ type Cookie struct {
 	MaxAge   *int64 `json:"max-age"`
 	Path     string
 	Port     *int
-	Samesite bool
+	Samesite json.RawMessage // can be boolean or string
 	Secure   bool
 }
 
