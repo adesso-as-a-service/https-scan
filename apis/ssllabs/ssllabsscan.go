@@ -612,14 +612,14 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 			// Go doesn't seem to be handling well. So we'll try one
 			// more time.
 			if retryCount > 5 {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Too many HTTP requests (5) failed with EOF (ref#2)"), manager.LogLevel, hooks.LogCritical)
+				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Too many HTTP requests (5) failed with EOF (ref#2)"), manager.LogLevel, hooks.LogError)
 
 			}
 
 			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("HTTP request failed with EOF (ref#2)"), manager.LogLevel, hooks.LogDebug)
 
 		} else {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("HTTP request failed: %v (ref#2)", err.Error()), manager.LogLevel, hooks.LogCritical)
+			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("HTTP request failed: %v (ref#2)", err.Error()), manager.LogLevel, hooks.LogError)
 		}
 
 		retryCount++
