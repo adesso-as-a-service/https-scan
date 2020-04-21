@@ -381,7 +381,7 @@ func UpdateScan(scan hooks.ScanRow) error {
 // Remove results with ScanStgatus ignored (2)
 func RemoveIgnored(scan hooks.ScanRow) error {
 	var err error
-	// Currently onle SSLLabs, because its the olny one which use staurs ignored
+	// Currently only SSLLabs, because its the only one which use status ignored
 	_, err = globalDatabase.Exec(
 		"DELETE FROM  "+
 			"SSLLabsV10 "+

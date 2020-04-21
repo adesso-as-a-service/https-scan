@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"log"
 	"net"
 	"time"
@@ -40,9 +41,7 @@ func testHTTPS(host string) bool {
 	timeOut := time.Duration(seconds) * time.Second
 	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
 	if err != nil {
-		if logLevel >= hooks.LogDebug {
-			sslLogger.Printf("[DEBUG] Timeout dialing port 443: %v", err)
-		}
+		Logger.Debugf("Timeout dialing port 443: %v", err)
 		return false
 	}
 	return true
@@ -55,9 +54,7 @@ func testHTTP(host string) bool {
 	timeOut := time.Duration(seconds) * time.Second
 	_, err := net.DialTimeout("tcp", hostName+":"+portNum, timeOut)
 	if err != nil {
-		if logLevel >= hooks.LogDebug {
-			sslLogger.Printf("[DEBUG] Timeout dialing port 80: %v", err)
-		}
+		Logger.Debugf("Timeout dialing port 80: %v", err)
 		return false
 
 	}
@@ -81,7 +78,11 @@ func testSSL(domain hooks.DomainsRow, channel chan hooks.ScanData, scanID int) {
 	if result.DomainReachable == 0 || result.DomainReachable == 4 {
 		err := backend.SaveUnreachable(scanID, result.DomainID, result.DomainReachable == 4)
 		if err != nil {
-			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed saving Unreachable-Status for %v: %v", result.DomainID, err), logLevel, hooks.LogError)
+			Logger.WithFields(logrus.Fields{
+				"domainID":   result.DomainID,
+				"domainName": domain.DomainName,
+				"error":      err,
+			}).Error("Failed saving Unreachable-Status")
 		}
 		result.DomainReachable = 0
 	}
