@@ -26,8 +26,7 @@ import (
 	"./hooks"
 )
 
-var Logger *logrus.Entry     // this Logger will log to std out and file if available
-var JsonLogger *logrus.Entry // this Logger will log json output to file if enabled
+var Logger *logrus.Entry
 
 var forceOverwrite bool
 var configuration map[string]interface{}
@@ -83,13 +82,10 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if err != nil {
 		return scan, err
 	}
-	//err = json.Unmarshal([]byte(scan.Config.String), &configuration)
-	//if err != nil {
-	//	Logger.WithFields(logrus.Fields{
-	//		"config": scan.Config.String,
-	//		"error":  err,
-	//	}).Panic("Failed unmarshalling configuration")
-	//}
+	err = json.Unmarshal([]byte(scan.Config.String), &configuration)
+	if err != nil {
+		Logger.Panicf("Failed unmarshaling configuration '%v': %v", scan.Config.String, err)
+	}
 	// configuring Apis and set used managers
 	for tableName, f := range hooks.ManagerParseConfig {
 		f(configuration[tableName])
@@ -319,7 +315,6 @@ func setUpLogging(confVerbosity *string, confLogFormat *string, confLogReportCal
 	}
 
 	var loggerConfiguration = logrus.New()
-	//loggerConfiguration.SetOutput(hooks.LogWriter)
 	loggerConfiguration.SetLevel(loglevel)
 	loggerConfiguration.SetReportCaller(*confLogReportCaller)
 
