@@ -2,13 +2,9 @@ package hooks
 
 import (
 	"database/sql"
-	"io"
-	"math/rand"
-	"os"
-	"sync/atomic"
-	"time"
-
 	"github.com/sirupsen/logrus"
+	"math/rand"
+	"sync/atomic"
 )
 
 // shared Structs
@@ -243,8 +239,7 @@ var ManagerHandleResults map[string]func(InternalMessage)
 var ManagerParseConfig map[string]func(interface{})
 
 // Logging
-var Logger *logrus.Logger
-var LogWriter io.Writer
+var Logger *logrus.Entry
 
 // CheckDoError returns true if an error should be retried next
 func (manager *Manager) CheckDoError() bool {
@@ -261,21 +256,4 @@ func init() {
 	ManagerHandleScan = make(map[string]func([]DomainsReachable, chan InternalMessage) []DomainsReachable)
 	ManagerHandleResults = make(map[string]func(InternalMessage))
 	ManagerParseConfig = make(map[string]func(interface{}))
-	buildLoggers()
-}
-
-// creates all loggers for every Manager
-func buildLoggers() {
-	// Create Directory
-	if _, err := os.Stat("log"); os.IsNotExist(err) {
-		os.Mkdir("log", 0700)
-	}
-
-	// Create Log-file
-	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
-	if err != nil {
-		LogWriter = os.Stdout
-	} else {
-		LogWriter = io.MultiWriter(file, os.Stdout)
-	}
 }

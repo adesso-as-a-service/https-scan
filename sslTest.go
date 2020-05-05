@@ -3,15 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"log"
 	"net"
 	"time"
 
 	"./backend"
 	"./hooks"
 )
-
-var sslLogger = log.New(hooks.LogWriter, "SSLTest\t", log.Ldate|log.Ltime)
 
 // Tests if a URL is reachable over HTTPS oder HTTP
 // 0 unreachable

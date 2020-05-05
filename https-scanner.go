@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/url"
@@ -25,7 +26,8 @@ import (
 	"./hooks"
 )
 
-var Logger *logrus.Logger // this Logger will log to std out and file (if available)
+var Logger *logrus.Entry     // this Logger will log to std out and file if available
+var JsonLogger *logrus.Entry // this Logger will log json output to file if enabled
 
 var forceOverwrite bool
 var configuration map[string]interface{}
@@ -316,24 +318,49 @@ func setUpLogging(confVerbosity *string, confLogFormat *string, confLogReportCal
 		loglevel = logrus.TraceLevel
 	}
 
-	Logger = logrus.New()
-	Logger.SetOutput(hooks.LogWriter)
-	Logger.SetLevel(loglevel)
-	Logger.SetReportCaller(*confLogReportCaller)
+	var loggerConfiguration = logrus.New()
+	//loggerConfiguration.SetOutput(hooks.LogWriter)
+	loggerConfiguration.SetLevel(loglevel)
+	loggerConfiguration.SetReportCaller(*confLogReportCaller)
 
-	// should be text or json. default: text
+	// Setup logging to stdout (text or json format)
 	switch *confLogFormat {
 	case "json":
-		Logger.SetFormatter(&logrus.JSONFormatter{})
+		loggerConfiguration.SetFormatter(&logrus.JSONFormatter{})
 	default:
-		Logger.SetFormatter(&logrus.TextFormatter{
+		loggerConfiguration.SetFormatter(&logrus.TextFormatter{
 			DisableColors:          false,
 			PadLevelText:           true,
 			DisableLevelTruncation: true,
 		})
 	}
 
+	// Setup logging to file (always json format)
+	if _, err := os.Stat("log"); os.IsNotExist(err) {
+		if err != nil {
+			loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Failed retrieving FileInfo for file logging")
+		} else {
+			err = os.Mkdir("log", 0700)
+			if err != nil {
+				loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Error while creating log directory")
+			}
+		}
+	}
+	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
+	if err != nil {
+		loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Failed to set up file logging")
+	} else {
+		loggerConfiguration.Hooks.Add(lfshook.NewHook(
+			file,
+			&logrus.JSONFormatter{},
+		))
+	}
+
+	// hook attribute should always be set for log parsers (HIDS, CLC, ...)
+	Logger = loggerConfiguration.WithFields(logrus.Fields{"hook": nil})
+
 	hooks.Logger = Logger
+	backend.Logger = Logger
 
 	Logger.WithFields(logrus.Fields{"chosen_level": loglevel, "error": parseLevelError}).Info("Logging has been initialized")
 }
@@ -362,8 +389,8 @@ func main() {
 	var confConfig = flag.String("config", "", "Configuration file for the scanners")
 
 	// setUp Input Arguments for apis
-	for _, f := range hooks.FlagSetUp {
-		f()
+	for _, hookSetUpFunction := range hooks.FlagSetUp {
+		hookSetUpFunction()
 	}
 
 	flag.Parse()
@@ -402,8 +429,8 @@ func main() {
 		currentScan.Config.Valid = true
 	}
 	// configuring Apis and set used managers
-	for tableName, f := range hooks.ConfigureSetUp {
-		if f(&currentScan, outputChannel, configuration[tableName]) {
+	for tableName, hookConfigureSetUpFunction := range hooks.ConfigureSetUp {
+		if hookConfigureSetUpFunction(&currentScan, outputChannel, configuration[tableName]) {
 			usedManagers = append(usedManagers, tableName)
 		}
 	}
