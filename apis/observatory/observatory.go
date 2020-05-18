@@ -653,6 +653,7 @@ func setUp() {
 	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
 
+// Review: If it is emtpy, it can be removed, can it?
 func setUpLogger() {
 
 }
