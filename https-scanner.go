@@ -84,10 +84,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if err != nil {
 		return scan, err
 	}
-	err = json.Unmarshal([]byte(scan.Config.String), &configuration)
-	if err != nil {
-		hooks.LogIfNeeded(logger, fmt.Sprintf("Failed unmarshaling configuration '%v': %v", scan.Config.String, err), logLevel, hooks.LogCritical)
-	}
+
 	// configuring Apis and set used managers
 	for tableName, f := range hooks.ManagerParseConfig {
 		f(configuration[tableName])
@@ -448,7 +445,7 @@ scan:
 				} else {
 					hooks.LogIfNeeded(logger, fmt.Sprintf("Ignored results are deleted"), logLevel, hooks.LogInfo)
 				}
-				
+
 				break scan
 			}
 		}
