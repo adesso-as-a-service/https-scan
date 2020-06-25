@@ -1,18 +1,17 @@
 package backend
 
 import (
+	"../hooks"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/denisenkom/go-mssqldb"
+	"github.com/fatih/structs"
 	"github.com/sirupsen/logrus"
 	"os"
 	"strings"
-
-	"../hooks"
-	_ "github.com/denisenkom/go-mssqldb"
-	"github.com/fatih/structs"
 )
 
 var globalDatabase *sql.DB
@@ -394,25 +393,55 @@ func SaveCertificates(rows []*hooks.CertificateRow, table string) error {
 	ctx := context.Background()
 	for _, row := range rows {
 		query := `
-IF NOT EXISTS (SELECT * FROM %[1]v WHERE Thumbprint = ?)
+IF NOT EXISTS (SELECT * FROM %[1]v WHERE ThumbprintSHA256 = ?)
 	BEGIN
 		INSERT INTO %[1]v
-		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NextThumbprint, ValidFrom, ValidTo, AltNames)
+		(ThumbprintSHA256, ThumbprintSHA1, CreatedAt, UpdatedAt, CommonNames, AltNames, SerialNumber, Subject, IssuerSubject, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, ValidFrom, ValidTo)
 		VALUES
-		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	END
 ELSE
 	BEGIN
 		UPDATE  %[1]v
-		SET Issues = ?, ValidFrom = ?, ValidTo = ?, AltNames = ?
-		WHERE Thumbprint = ?
+		SET UpdatedAt = ?, Issues = ?, ValidFrom = ?, ValidTo = ?, CommonNames = ?, AltNames = ?
+		WHERE ThumbprintSHA256 = ?
 	END
 `
 		var err error
 		_, err = globalDatabase.ExecContext(ctx,
 			fmt.Sprintf(query, table),
-			row.Thumbprint, row.Thumbprint, row.SerialNumber, row.Subject, row.Issuer, row.SigAlg, row.RevocationStatus, row.Issues,
-			row.KeyStrength, row.DebianInsecure, row.NextThumbprint, row.ValidFrom, row.ValidTo, row.AltNames, row.Issues, row.ValidFrom, row.ValidTo, row.AltNames, row.Thumbprint)
+			row.ThumbprintSHA256,
+			row.ThumbprintSHA256, row.ThumbprintSHA1, row.CreatedAt, row.UpdatedAt,
+			row.CommonNames, row.AltNames, row.SerialNumber, row.Subject, row.IssuerSubject, row.SigAlg, row.RevocationStatus, row.Issues,
+			row.KeyStrength, row.DebianInsecure, row.ValidFrom, row.ValidTo,
+			row.CreatedAt, row.Issues, row.ValidFrom, row.ValidTo, row.CommonNames, row.AltNames, row.ThumbprintSHA256)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SaveCertificateChains stores all given certificate chains in the Table, while avoiding duplicate entries
+func SaveCertificateChains(rows []*hooks.CertificateChainRow, table string) error {
+	ctx := context.Background()
+	for _, row := range rows {
+		query := `
+MERGE %[1]v AS [Target]
+USING (SELECT ? AS ThumbprintSHA256, ? AS NextThumbprintSHA256) AS [Source] 
+ON [Target].ThumbprintSHA256 = [Source].ThumbprintSHA256 AND [Target].NextThumbprintSHA256 = [Source].NextThumbprintSHA256
+WHEN MATCHED THEN
+  UPDATE SET [Target].UpdatedAt = ?
+WHEN NOT MATCHED THEN
+  INSERT (ThumbprintSHA256, NextThumbprintSHA256, CreatedAt, UpdatedAt) VALUES ([Source].ThumbprintSHA256, [Source].NextThumbprintSHA256, ?, ?);
+`
+
+		var err error
+		_, err = globalDatabase.ExecContext(ctx,
+			fmt.Sprintf(query, table),
+			row.ThumbprintSHA256, row.NextThumbprintSHA256,
+			row.UpdatedAt,
+			row.CreatedAt, row.UpdatedAt)
 		if err != nil {
 			return err
 		}

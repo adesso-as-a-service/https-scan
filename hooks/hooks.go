@@ -133,20 +133,29 @@ type ScanWhereCond struct {
 
 // CertificateRow contins all the stored information of an entry in the Certificates-Table
 type CertificateRow struct {
-	Thumbprint       string
-	ID               string
+	ThumbprintSHA256 string
+	ThumbprintSHA1   string
 	SerialNumber     string
 	Subject          string
-	Issuer           string
+	IssuerSubject    string
 	SigAlg           string
 	RevocationStatus uint8
 	Issues           int16
 	KeyStrength      int16
 	DebianInsecure   bool
-	NextThumbprint   sql.NullString
 	ValidFrom        string
 	ValidTo          string
+	CommonNames      string
 	AltNames         string
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type CertificateChainRow struct {
+	ThumbprintSHA256     string
+	NextThumbprintSHA256 string
+	CreatedAt            string
+	UpdatedAt            string
 }
 
 type DomainsRowMetaInfo struct {
@@ -207,7 +216,11 @@ func (status *ScanStatus) GetRemainingScans() int32 {
 
 func Truncate(str string, trLen int) string {
 	if len(str) > trLen {
-		return str[:trLen]
+		shortStr := str[:trLen]
+
+		Logger.Warningf("WARNING String '%v' has been truncated to '%v'", str, shortStr)
+
+		return shortStr
 	}
 	return str
 }
