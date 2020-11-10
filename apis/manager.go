@@ -10,6 +10,7 @@ import (
 	// Initialize API-hooks
 	_ "./crawler"
 	_ "./observatory"
+	_ "./observatory_tls"
 	_ "./securityheaders"
 	_ "./ssllabs"
 	// Example API

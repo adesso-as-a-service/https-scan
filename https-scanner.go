@@ -398,6 +398,9 @@ func main() {
 		}
 		// create Scan if not continued
 		currentScan, err = initializeScan(currentScan, usedManagers)
+		if err != nil {
+			logger.Fatal(err)
+		}
 	} else {
 		// continue last
 		currentScan.ScanID = -1

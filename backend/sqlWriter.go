@@ -204,14 +204,10 @@ func duplicateScansWithSSL(table string, scanID int) error {
 
 // SaveResults updates table columns defined by "results" for the row defined by "whereCond". The "whereCond"-Parameters are concatenated by ANDs
 func SaveResults(table string, whereCond *structs.Struct, results *structs.Struct) error {
-	var err error
 	set, setArgs := getSetString(results)
 	where, whereArgs := getWhereString(whereCond)
-	if err != nil {
-		// Add errorhandling
-		return err
-	}
-	_, err = globalDatabase.Exec(fmt.Sprintf(
+
+	_, err := globalDatabase.Exec(fmt.Sprintf(
 		"UPDATE %[1]v "+
 			"SET %s "+
 			"WHERE %s", table, set, where), append(setArgs, whereArgs...)...)
