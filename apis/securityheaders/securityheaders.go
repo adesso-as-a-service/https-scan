@@ -36,12 +36,12 @@ var manager = hooks.Manager{
 	Table:            "Securityheaders",         //Table name
 	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
 	OutputChannel:    nil,                       //output channel
-	LogLevel:         hooks.LogNotice,           //loglevel
 	Status:           hooks.ScanStatus{},        // initial scanStatus
 	FinishError:      0,                         // number of errors while finishing
 	ScanID:           0,                         // scanID
 	Errors:           []hooks.InternalMessage{}, //errors
 	FirstScan:        false,                     //hasn't started first scan
+	LoggingTag:       "sechead",
 }
 
 // CrawlerConfig
@@ -49,7 +49,6 @@ type Config struct {
 	Retries        int
 	ScanType       int
 	ParallelScans  int
-	LogLevel       string
 	Hidden         string
 	FollowRedirect string
 	APILocation    string
@@ -61,7 +60,6 @@ var currentConfig = Config{
 	ScanType:       hooks.ScanBoth,
 	APILocation:    "https://securityheaders.com/?q=",
 	ParallelScans:  10,
-	LogLevel:       "info",
 	Hidden:         "on",
 	FollowRedirect: "off",
 }
@@ -116,14 +114,14 @@ func findHeaders(rawHeadersText string, headerName string) string {
 	header = header[:textEnd]
 
 	textBegin = strings.Index(header, "<td")
-	header = header[textBegin + len("<td"):]
+	header = header[textBegin+len("<td"):]
 
 	textBegin = strings.Index(header, ">")
-	header = header[textBegin + len(">"):]
+	header = header[textBegin+len(">"):]
 
 	textEnd = strings.Index(header, "</td>")
 	header = header[:textEnd]
-	
+
 	//Clean results from tags
 	noTags := regexp.MustCompile("<[/A-Z-Za-z-z]+>")
 	header = noTags.ReplaceAllString(header, "")
@@ -158,7 +156,7 @@ func parseResponse(r io.ReadCloser) *TableRow {
 	return &secH
 }
 
-func searchForHeaders(rawHeadersContent string, missingHeadersContent string, headerName string) string{
+func searchForHeaders(rawHeadersContent string, missingHeadersContent string, headerName string) string {
 	result := ""
 	rawHeaders := ""
 	missingHeaders := ""
@@ -169,11 +167,11 @@ func searchForHeaders(rawHeadersContent string, missingHeadersContent string, he
 		result = "missing"
 	} else {
 		if headerName == "Content-Security-Policy" {
-				result = hooks.Truncate(rawHeaders, 5000)
-			} else {
-				result = hooks.Truncate(rawHeaders, 300)
-			}
-		result = strings.ReplaceAll(result, "&quot;","\"")
+			result = hooks.Truncate(rawHeaders, 5000)
+		} else {
+			result = hooks.Truncate(rawHeaders, 300)
+		}
+		result = strings.ReplaceAll(result, "&quot;", "\"")
 	}
 	return result
 }
@@ -187,7 +185,7 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 		// pop fist domain
 		if manager.CheckDoError() && len(manager.Errors) != 0 {
 			scanMsg, manager.Errors = manager.Errors[0], manager.Errors[1:]
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying failed assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Retrying failed assessment next: %v", scanMsg.Domain.DomainName)
 		} else if len(domains) != 0 {
 			scan, retDom = domains[0], domains[1:]
 			scanMsg = hooks.InternalMessage{
@@ -196,17 +194,17 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 				Retries:    0,
 				StatusCode: hooks.InternalNew,
 			}
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Trying new assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Trying new assessment next: %v", scanMsg.Domain.DomainName)
 		} else {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("No new assessment started")
 			return domains
 		}
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Started assessment for %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Started assessment for %v", scanMsg.Domain.DomainName)
 		go assessment(scanMsg, internalChannel)
 		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+	manager.Logger.Tracef("No new assessment started")
 	return domains
 }
 
@@ -215,7 +213,7 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 	row, err := invokeSecurityHeaders(scan.Domain.DomainName, scan.Domain.TestWithSSL)
 	//Ignore mismatch
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Assessment failed for %v: %v", scan.Domain.DomainName, err)
 		scan.Results = row
 		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
@@ -250,10 +248,7 @@ func invokeSecurityHeaders(host string, supportsSSL bool) (TableRow, error) {
 		return TableRow{}, err
 	}
 	if response.StatusCode != http.StatusOK {
-		if manager.LogLevel >= hooks.LogError {
-			log.Printf("[ERROR] securityheaders.io returned non-200 status for host %v : %v", host, response.Status)
-		}
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Returned non-200 status for host %v : %v", host, response.Status), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Returned non-200 status for host %v : %v", host, response.Status)
 		err = errors.New("security Header Assessment failed")
 		io.Copy(ioutil.Discard, response.Body)
 		//response.Body.Close()
@@ -283,7 +278,7 @@ func handleResults(result hooks.InternalMessage) {
 
 	if !ok {
 		//TODO Handle Error
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't assert type of result for  %v", result.Domain.DomainName), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't assert type of result for  %v", result.Domain.DomainName)
 		res = TableRow{}
 		result.StatusCode = hooks.InternalFatalError
 	}
@@ -292,11 +287,11 @@ func handleResults(result hooks.InternalMessage) {
 	case hooks.InternalFatalError:
 		res.ScanStatus = hooks.StatusError
 		manager.Status.AddFatalErrorScans(1)
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v failed ultimately", result.Domain.DomainName), manager.LogLevel, hooks.LogInfo)
+		manager.Logger.Infof("Assessment of %v failed ultimately", result.Domain.DomainName)
 	case hooks.InternalSuccess:
 		res.ScanStatus = hooks.StatusDone
 		manager.Status.AddFinishedScans(1)
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v was successful", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Assessment of %v was successful", result.Domain.DomainName)
 	}
 	where := hooks.ScanWhereCond{
 		DomainID:    result.Domain.DomainID,
@@ -304,10 +299,10 @@ func handleResults(result hooks.InternalMessage) {
 		TestWithSSL: result.Domain.TestWithSSL}
 	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't save results for %v: %v", result.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't save results for %v: %v", result.Domain.DomainName, err)
 		return
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Results for %v saved", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+	manager.Logger.Debugf("Results for %v saved", result.Domain.DomainName)
 }
 
 func flagSetUp() {
@@ -331,36 +326,34 @@ func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMes
 func parseConfig(config interface{}) {
 	jsonString, err := json.Marshal(config)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing config to interface: %v", err)
 	}
 	err = json.Unmarshal(jsonString, &currentConfig)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing json to struct: %v", err)
 	}
 	if currentConfig.Hidden != "on" && currentConfig.Hidden != "off" {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.Hidden), manager.LogLevel, hooks.LogCritical)
+		manager.Logger.Panicf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.Hidden)
 	}
 	if currentConfig.FollowRedirect != "on" && currentConfig.FollowRedirect != "off" {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.FollowRedirect), manager.LogLevel, hooks.LogCritical)
+		manager.Logger.Panicf("Hidden in the Config has to be 'on' or 'off' not '%v'", currentConfig.FollowRedirect)
 	}
 	manager.MaxRetries = currentConfig.Retries
 	manager.ScanType = currentConfig.ScanType
-	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
 	manager.MaxParallelScans = currentConfig.ParallelScans
 }
 
 func continueScan(scan hooks.ScanRow) bool {
-	if manager.Version != scan.SecurityHeadersVersion {
-		return false
-	}
-	return true
+	return manager.Version == scan.SecurityHeadersVersion
 }
 
 func setUp() {
-
+	var logger = hooks.Logger
+	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
+
 func setUpLogger() {
-	manager.Logger = log.New(hooks.LogWriter, "SecHead\t", log.Ldate|log.Ltime)
+
 }
 
 func init() {

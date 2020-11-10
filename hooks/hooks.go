@@ -2,14 +2,9 @@ package hooks
 
 import (
 	"database/sql"
-	"io"
-	"io/ioutil"
-	"log"
+	"github.com/sirupsen/logrus"
 	"math/rand"
-	"os"
-	"strings"
 	"sync/atomic"
-	"time"
 )
 
 // shared Structs
@@ -47,20 +42,6 @@ const (
 	InternalSuccess = 1
 	// InternalNew defines a new scan
 	InternalNew = 2
-)
-
-// Diffrent Log-Levels
-const (
-	LogNone     = -1
-	LogEmerg    = 0
-	LogAlert    = 1
-	LogCritical = 2
-	LogError    = 3
-	LogWarning  = 4
-	LogNotice   = 5
-	LogInfo     = 6
-	LogDebug    = 7
-	LogTrace    = 8
 )
 
 // reachable
@@ -126,13 +107,13 @@ type Manager struct {
 	Table            string
 	ScanType         int
 	OutputChannel    chan ScanStatusMessage
-	LogLevel         int
 	Status           ScanStatus
 	FinishError      int
 	ScanID           int
 	Errors           []InternalMessage
 	FirstScan        bool
-	Logger           *log.Logger
+	Logger           *logrus.Entry
+	LoggingTag       string
 }
 
 // DomainsReachable is the base type for receiving the domains which should be scanned
@@ -257,9 +238,8 @@ var ManagerHandleResults map[string]func(InternalMessage)
 // ManagerParseConfig sets the given configuration
 var ManagerParseConfig map[string]func(interface{})
 
-var LogWriter io.Writer
-
-var LogLevel int
+// Logging
+var Logger *logrus.Entry
 
 // CheckDoError returns true if an error should be retried next
 func (manager *Manager) CheckDoError() bool {
@@ -276,86 +256,4 @@ func init() {
 	ManagerHandleScan = make(map[string]func([]DomainsReachable, chan InternalMessage) []DomainsReachable)
 	ManagerHandleResults = make(map[string]func(InternalMessage))
 	ManagerParseConfig = make(map[string]func(interface{}))
-	buildLoggers()
-}
-
-// Logs a message with logger, if messageLogLevel is smaller than the current loglevel
-func LogIfNeeded(logger *log.Logger, message string, logLevel int, messageLogLevel int) {
-	if logLevel >= messageLogLevel {
-		switch messageLogLevel {
-		case LogEmerg:
-			logger.Panicf("[EMERG] %s", message)
-		case LogAlert:
-			logger.Panicf("[ALERT] %s", message)
-		case LogCritical:
-			logger.Panicf("[CRITICAL] %s", message)
-		case LogError:
-			logger.Printf("[ERROR] %s", message)
-		case LogWarning:
-			logger.Printf("[WARNING] %s", message)
-		case LogNotice:
-			logger.Printf("[NOTICE] %s", message)
-		case LogInfo:
-			logger.Printf("[INFO] %s", message)
-		case LogDebug:
-			logger.Printf("[DEBUG] %s", message)
-		case LogTrace:
-			logger.Printf("[TRACE] %s", message)
-		default:
-			logger.Printf("[UNKNOWN] %s", message)
-		}
-
-	}
-}
-
-// creates all loggers for every Manager
-func buildLoggers() {
-	// Create Directory
-	if _, err := os.Stat("log"); os.IsNotExist(err) {
-		os.Mkdir("log", 0700)
-	}
-
-	// Create Log-file
-	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
-	if err != nil {
-		LogWriter = os.Stdout
-	} else {
-		LogWriter = io.MultiWriter(file, os.Stdout)
-	}
-
-	files, err := ioutil.ReadDir("log")
-
-	if err != nil {
-		log.Printf("ERROR opening directory log: %v", err)
-	}
-
-	countFiles := 0
-	for i := 0; i < len(files); i++ {
-		file := files[len(files)-1-i]
-		if strings.HasSuffix(file.Name(), ".log") {
-			countFiles++
-			if countFiles > 3 {
-				os.Remove("log/" + file.Name())
-			}
-		}
-	}
-}
-
-// ParseLogLevel returns the loglevel corresponding to a string
-func ParseLogLevel(level string) int {
-	switch {
-	case level == "error":
-		return LogError
-	case level == "notice":
-		return LogNotice
-	case level == "info":
-		return LogInfo
-	case level == "debug":
-		return LogDebug
-	case level == "trace":
-		return LogTrace
-	}
-
-	log.Fatalf("[ERROR] Unrecognized log level: %v", level)
-	return -1
 }

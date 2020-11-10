@@ -1,39 +1,35 @@
 {
-    "Securityheaders": {
-        "Retries": 3,
-        "ScanType": 3,
-        "APILocation": "https://securityheaders.io/?q=",
-        "ParallelScans": 10,
-        "LogLevel": "info",
-        "Hidden": "on",
-        "FollowRedirect": "off"
-    },
-    "SSLLabs": {
-        "Retries": 3,
-        "ScanType": 1,
-        "ParallelScans": 10,
-        "LogLevel": "info",
-        "APILocation": "https://api.ssllabs.com/api/v3",
-        "IgnoreMismatch": true,
-        "StartNew": false,
-        "FromCache": true,
-        "MaxAge": 24,
-        "NewAssessmentCoolOff": 1100
-    },
-    "Observatory": {
-        "Retries": 3,
-        "ScanType": 4,
-        "APILocation": "https://http-observatory.security.mozilla.org/api/v1",
-        "ParallelScans": 10,
-        "LogLevel": "info",
-        "Hidden": true,
-        "Rescan": false
-    },
-    "Crawler": {
-        "Retries": 3,
-        "ScanType": 3,
-        "MaxRedirects": 10,
-        "ParallelScans": 10,
-        "LogLevel": "info"
-    }
+  "Securityheaders": {
+    "Retries": 3,
+    "ScanType": 3,
+    "APILocation": "https://securityheaders.io/?q=",
+    "ParallelScans": 10,
+    "Hidden": "on",
+    "FollowRedirect": "off"
+  },
+  "SSLLabs": {
+    "Retries": 3,
+    "ScanType": 1,
+    "ParallelScans": 10,
+    "APILocation": "https://api.ssllabs.com/api/v3",
+    "IgnoreMismatch": true,
+    "StartNew": false,
+    "FromCache": true,
+    "MaxAge": 24,
+    "NewAssessmentCoolOff": 1100
+  },
+  "Observatory": {
+    "Retries": 3,
+    "ScanType": 4,
+    "APILocation": "https://http-observatory.security.mozilla.org/api/v1",
+    "ParallelScans": 10,
+    "Hidden": true,
+    "Rescan": false
+  },
+  "Crawler": {
+    "Retries": 3,
+    "ScanType": 3,
+    "MaxRedirects": 10,
+    "ParallelScans": 10
+  }
 }

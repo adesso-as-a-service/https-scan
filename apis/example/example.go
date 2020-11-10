@@ -1,15 +1,11 @@
 package example
 
 import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"log"
-
-	"github.com/fatih/structs"
-
 	"../../backend"
 	"../../hooks"
+	"encoding/json"
+	"flag"
+	"github.com/fatih/structs"
 )
 
 /* ------------------------------------------------------------
@@ -57,12 +53,12 @@ var manager = hooks.Manager{
 	Table:            "EXAMPLE",                 //Table name
 	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
 	OutputChannel:    nil,                       //output channel
-	LogLevel:         hooks.LogNotice,           //loglevel
 	Status:           hooks.ScanStatus{},        // initial scanStatus
 	FinishError:      0,                         // number of errors while finishing
 	ScanID:           0,                         // scanID
 	Errors:           []hooks.InternalMessage{}, //errors
 	FirstScan:        false,                     //hasn't started first scan
+	LoggingTag:       "example",
 }
 
 // Config contains the configurable Values for this scan
@@ -70,7 +66,6 @@ type Config struct {
 	Retries       int
 	ScanType      int
 	ParallelScans int
-	LogLevel      string
 }
 
 // defaultConfig
@@ -103,7 +98,7 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 		// pop fist domain
 		if manager.CheckDoError() && len(manager.Errors) != 0 {
 			scanMsg, manager.Errors = manager.Errors[0], manager.Errors[1:]
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying failed assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Retrying failed assessment next: %v", scanMsg.Domain.DomainName)
 		} else if len(domains) != 0 {
 			scan, retDom = domains[0], domains[1:]
 			scanMsg = hooks.InternalMessage{
@@ -112,17 +107,17 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 				Retries:    0,
 				StatusCode: hooks.InternalNew,
 			}
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Trying new assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Trying new assessment next: %v", scanMsg.Domain.DomainName)
 		} else {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("No new assessment started")
 			return domains
 		}
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Started assessment for %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Started assessment for %v", scanMsg.Domain.DomainName)
 		go assessment(scanMsg, internalChannel)
 		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("no new Assessment started"), manager.LogLevel, hooks.LogTrace)
+	manager.Logger.Tracef("no new Assessment started")
 	return domains
 }
 
@@ -142,7 +137,7 @@ func handleResults(result hooks.InternalMessage) {
 	manager.Status.AddCurrentScans(-1)
 
 	if !ok {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't assert type of result for  %v", result.Domain.DomainName), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't assert type of result for  %v", result.Domain.DomainName)
 		res = TableRow{}
 		result.StatusCode = hooks.InternalFatalError
 	}
@@ -151,10 +146,10 @@ func handleResults(result hooks.InternalMessage) {
 	case hooks.InternalFatalError:
 		res.ScanStatus = hooks.StatusError
 		manager.Status.AddFatalErrorScans(1)
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v failed ultimately", result.Domain.DomainName), manager.LogLevel, hooks.LogInfo)
+		manager.Logger.Infof("Assessment of %v failed ultimately", result.Domain.DomainName)
 	case hooks.InternalSuccess:
 		res.ScanStatus = hooks.StatusDone
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v was successful", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Assessment of %v was successful", result.Domain.DomainName)
 		manager.Status.AddFinishedScans(1)
 	}
 	where := hooks.ScanWhereCond{
@@ -163,10 +158,10 @@ func handleResults(result hooks.InternalMessage) {
 		TestWithSSL: result.Domain.TestWithSSL}
 	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't save results for %v: %v", result.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't save results for %v: %v", result.Domain.DomainName, err)
 		return
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Results for %v saved", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+	manager.Logger.Debugf("Results for %v saved", result.Domain.DomainName)
 
 }
 
@@ -192,7 +187,7 @@ func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalM
 
 	//Handle error
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment failed for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Assessment failed for %v: %v", scan.Domain.DomainName, err)
 		scan.Results = row
 		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
@@ -244,23 +239,19 @@ func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMes
 func parseConfig(config interface{}) {
 	jsonString, err := json.Marshal(config)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing config to interface: %v", err)
 	}
 	err = json.Unmarshal(jsonString, &currentConfig)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing json to struct: %v", err)
 	}
 	manager.MaxRetries = currentConfig.Retries
 	manager.ScanType = currentConfig.ScanType
 	maxScans = currentConfig.ParallelScans
-	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
 }
 
 func continueScan(scan hooks.ScanRow) bool {
-	if manager.Version != scan.CrawlerVersion {
-		return false
-	}
-	return true
+	return manager.Version == scan.CrawlerVersion
 }
 
 /* ------------------------------------------------------------
@@ -276,7 +267,8 @@ func setUp() {
 }
 
 func setUpLogger() {
-	manager.Logger = log.New(hooks.LogWriter, "Crawler\t", log.Ldate|log.Ltime)
+	var logger = apis.Logger
+	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
 
 func init() {

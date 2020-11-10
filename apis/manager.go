@@ -1,7 +1,7 @@
 package apis
 
 import (
-	"fmt"
+	"github.com/sirupsen/logrus"
 	"time"
 
 	"../backend"
@@ -20,22 +20,27 @@ import (
 var StatusTime = 4
 var finishErrorLimit = 3
 
+var Logger *logrus.Logger
+
 //Datatypes
 func Start(manager *hooks.Manager, scanID int, restart bool) {
-	go controll(manager, scanID, restart)
+	go control(manager, scanID, restart)
 }
 
 func setUp(manager *hooks.Manager) {
 	// Do required SetUp
-	for _, f := range hooks.ManagerSetUp {
-		f()
+	for _, setUpFunction := range hooks.ManagerSetUp {
+		setUpFunction()
 	}
 }
 
-// controll runs as a routine per manager handeling the scan
-func controll(manager *hooks.Manager, scanID int, restart bool) {
+// control runs as a routine per manager handling the scan
+func control(manager *hooks.Manager, scanID int, restart bool) {
 	manager.ScanID = scanID
 	domains := receiveScans(manager, restart)
+
+	hooks.Logger.Infof("Found %d domains to scan", len(domains))
+
 	// if no domains to scan, just finished
 	if len(domains) == 0 {
 		manager.FirstScan = true
@@ -54,7 +59,7 @@ func controll(manager *hooks.Manager, scanID int, restart bool) {
 			domains = handleScans(manager, domains, internalChannel)
 			if testFinished(manager, domains) {
 				// needs to send goodbye
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Scan complete, shutting down"), manager.LogLevel, hooks.LogInfo)
+				manager.Logger.Info("Scan complete, shutting down")
 				sendStatusMessage(manager)
 				manager.OutputChannel <- hooks.ScanStatusMessage{
 					Status: nil,
@@ -71,19 +76,24 @@ func receiveScans(manager *hooks.Manager, restart bool) []hooks.DomainsReachable
 	if !restart {
 		err := backend.PrepareScanData(manager.GetTableName(), manager.ScanID, manager.ScanType)
 		if err != nil {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Prepareing Scan Data failed: %v", err), manager.LogLevel, hooks.LogCritical)
+			manager.Logger.WithFields(logrus.Fields{"error": err}).Panic("Preparing Scan Data failed")
 		}
 	}
 	domains, err := backend.GetScans(manager.GetTableName(), manager.ScanID, hooks.StatusPending)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Reading Scans from Database failed: %v", err), manager.LogLevel, hooks.LogCritical)
+		manager.Logger.WithFields(logrus.Fields{"error": err}).Panic("Reading Scans from Database failed")
 	}
 	return domains
 }
 
-// sendStatusMessage sends status message to the conroller
+// sendStatusMessage sends status message to the controller
 func sendStatusMessage(manager *hooks.Manager) {
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Running: %5d    Retrying: %5d    Failed:%5d    Remaining: %5d    ", manager.Status.GetCurrentScans(), manager.Status.GetErrorScans(), manager.Status.GetFatalErrorScans(), manager.Status.GetTotalScans()-manager.Status.GetFinishedScans()), manager.LogLevel, hooks.LogInfo)
+	manager.Logger.Infof("Running: %5d    Retrying: %5d    Failed:%5d    Remaining: %5d    ",
+		manager.Status.GetCurrentScans(),
+		manager.Status.GetErrorScans(),
+		manager.Status.GetFatalErrorScans(),
+		manager.Status.GetTotalScans()-manager.Status.GetFinishedScans())
+
 	var mes = hooks.ScanStatus{
 		CurrentScans:    manager.Status.GetCurrentScans(),
 		ErrorScans:      manager.Status.GetErrorScans(),
@@ -104,7 +114,9 @@ func handleScans(manager *hooks.Manager, domains []hooks.DomainsReachable, inter
 	}
 	f := hooks.ManagerHandleScan[manager.Table]
 	if f == nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Unknown manager table name %v", manager.Table), manager.LogLevel, hooks.LogCritical)
+		manager.Logger.WithFields(logrus.Fields{
+			"tableName": manager.Table,
+		}).Panic("Unknown manager table name")
 	}
 
 	domains = f(domains, internalChannel)
@@ -116,7 +128,10 @@ func testFinished(manager *hooks.Manager, domains []hooks.DomainsReachable) bool
 	if manager.Status.GetRemainingScans() == 0 && manager.FirstScan {
 		if len(domains) != 0 && len(manager.Errors) != 0 {
 			if manager.FinishError >= finishErrorLimit {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Exceeded finishErrorLimit: errorcount: %d limit: %d", manager.FinishError, finishErrorLimit), manager.LogLevel, hooks.LogCritical)
+				manager.Logger.WithFields(logrus.Fields{
+					"errorcount": manager.FinishError,
+					"limit":      finishErrorLimit,
+				}).Panic("Exceeded finishErrorLimit")
 			}
 			manager.FinishError++
 			return false
@@ -129,9 +144,9 @@ func testFinished(manager *hooks.Manager, domains []hooks.DomainsReachable) bool
 // handleResults saves finished scans
 func handleResults(manager *hooks.Manager, results hooks.InternalMessage) {
 
-	f := hooks.ManagerHandleResults[manager.Table]
-	if f == nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Unknown manager table name %v", manager.Table), manager.LogLevel, hooks.LogCritical)
+	handleResultsFunction := hooks.ManagerHandleResults[manager.Table]
+	if handleResultsFunction == nil {
+		manager.Logger.WithFields(logrus.Fields{"tableName": manager.Table}).Panic("Unknown manager table name")
 	}
 	if results.Retries != 0 {
 		manager.Status.AddErrorScans(-1)
@@ -144,9 +159,9 @@ func handleResults(manager *hooks.Manager, results hooks.InternalMessage) {
 			manager.Errors = append(manager.Errors, results)
 			manager.Status.AddErrorScans(1)
 			manager.Status.AddCurrentScans(-1)
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying %v for the %d. times", results.Domain.DomainName, results.Retries), manager.LogLevel, hooks.LogDebug)
+			manager.Logger.Debugf("Retrying %v for the %d. times", results.Domain.DomainName, results.Retries)
 			return
 		}
 	}
-	f(results)
+	handleResultsFunction(results)
 }
