@@ -82,10 +82,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if err != nil {
 		return scan, err
 	}
-	err = json.Unmarshal([]byte(scan.Config.String), &configuration)
-	if err != nil {
-		Logger.Panicf("Failed unmarshaling configuration '%v': %v", scan.Config.String, err)
-	}
+
 	// configuring Apis and set used managers
 	for tableName, f := range hooks.ManagerParseConfig {
 		f(configuration[tableName])
@@ -456,7 +453,7 @@ func main() {
 		// create Scan if not continued
 		currentScan, err = initializeScan(currentScan, usedManagers)
 		if err != nil {
-			logger.Fatal(err)
+			Logger.Fatalf("Error during initializeScan: %v", err)
 		}
 	} else {
 		// continue last
