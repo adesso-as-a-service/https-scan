@@ -120,6 +120,7 @@ var httpClient *http.Client
 var lastTime time.Time
 
 var certificatesTable = "CertificatesV10"
+var certificateChainsTable = "CertificateChainsV10"
 
 type LabsError struct {
 	Field   string
@@ -221,6 +222,7 @@ type LabsCert struct {
 	Issues                 int
 	Sct                    bool
 	Sha1Hash               string
+	Sha256Hash             string
 	PinSha256              string
 	KeyAlg                 string
 	KeySize                int
@@ -370,11 +372,11 @@ type LabsDrownHost struct {
 }
 
 type LabsCertChain struct {
-	Id        string
-	CertIds   []string
-	Trustpath []LabsTrustPath
-	Issues    int
-	NoSni     bool
+	Id         string
+	CertIds    []string
+	Trustpaths []LabsTrustPath
+	Issues     int
+	NoSni      bool
 }
 
 type LabsTrustPath struct {
@@ -892,6 +894,13 @@ func handleResults(result hooks.InternalMessage) {
 		return
 	}
 
+	certChainRows := makeCertificateChainRows(res)
+	err = backend.SaveCertificateChains(certChainRows, certificateChainsTable)
+	if err != nil {
+		manager.Logger.Errorf("Couldn't save certificate chains for %v: %v", result.Domain.DomainName, err)
+		return
+	}
+
 	where := hooks.ScanWhereCond{
 		DomainID:    result.Domain.DomainID,
 		ScanID:      manager.ScanID,
@@ -906,18 +915,17 @@ func handleResults(result hooks.InternalMessage) {
 
 func makeCertificateRows(report *LabsReport) []*hooks.CertificateRow {
 	var res = []*hooks.CertificateRow{}
-	var chainLength = len(report.Certs)
 	if len(report.Endpoints) == 0 {
 		manager.Logger.Errorf("Couldn't read certificates for %v: no endpoints", report.Host)
 		return res
 	}
-	for i, cert := range report.Certs {
+	for _, cert := range report.Certs {
 		row := &hooks.CertificateRow{}
-		row.Thumbprint = hooks.Truncate(cert.Sha1Hash, 40)
-		row.ID = hooks.Truncate(cert.Id, 80)
+		row.ThumbprintSHA256 = hooks.Truncate(cert.Sha256Hash, 64)
+		row.ThumbprintSHA1 = hooks.Truncate(cert.Sha1Hash, 40)
 		row.SerialNumber = hooks.Truncate(cert.SerialNumber, 100)
 		row.Subject = hooks.Truncate(cert.Subject, 300)
-		row.Issuer = hooks.Truncate(cert.IssuerSubject, 300)
+		row.IssuerSubject = hooks.Truncate(cert.IssuerSubject, 300)
 		row.SigAlg = hooks.Truncate(cert.SigAlg, 30)
 		row.RevocationStatus = uint8(cert.RevocationStatus)
 		row.Issues = int16(cert.Issues)
@@ -925,16 +933,61 @@ func makeCertificateRows(report *LabsReport) []*hooks.CertificateRow {
 		row.DebianInsecure = cert.KeyKnownDebianInsecure
 		row.ValidTo = time.Unix(cert.NotAfter/1000, 0).Format("2006-01-02 15:04:05")
 		row.ValidFrom = time.Unix(cert.NotBefore/1000, 0).Format("2006-01-02 15:04:05")
+		row.CommonNames = strings.Join(cert.CommonNames, ", ")
 		row.AltNames = strings.Join(cert.AltNames, ", ")
-		if i+1 < chainLength {
-			row.NextThumbprint = sql.NullString{
-				String: hooks.Truncate(report.Certs[i+1].Sha1Hash, 40),
-				Valid:  true,
-			}
-		}
+
+		row.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+		row.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
 
 		res = append([]*hooks.CertificateRow{row}, res...)
 	}
+	return res
+}
+
+func makeCertificateChainRows(report *LabsReport) []*hooks.CertificateChainRow {
+	var res = []*hooks.CertificateChainRow{}
+	if len(report.Endpoints) == 0 {
+		manager.Logger.Errorf("Couldn't read certificate chains for %v: no endpoints", report.Host)
+		return res
+	}
+
+	for _, endpoint := range report.Endpoints {
+		for _, certChain := range endpoint.Details.CertChains {
+			for _, trustPath := range certChain.Trustpaths {
+				// We choose to use chains that are trusted by Mozilla (also available: Apple, Android, Windows, Java)
+				isMozillaTrusted := false
+				for _, trust := range trustPath.Trust {
+					if trust.IsTrusted && trust.RootStore == "Mozilla" {
+						isMozillaTrusted = true
+						break
+					}
+				}
+
+				if !isMozillaTrusted {
+					continue
+				}
+
+				for i, certId := range trustPath.CertIds {
+					// The last certificate is a root certificate without a next certificate and does not need a table entry
+					if i == (len(trustPath.CertIds) - 1) {
+						continue
+					}
+
+					row := &hooks.CertificateChainRow{}
+					row.ThumbprintSHA256 = hooks.Truncate(certId, 64)
+
+					// If there is a next certificate in the API response, it is also the next certificate in the chain
+					row.NextThumbprintSHA256 = hooks.Truncate(trustPath.CertIds[i+1], 64)
+
+					row.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+					row.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+
+					res = append([]*hooks.CertificateChainRow{row}, res...)
+				}
+			}
+		}
+	}
+
 	return res
 }
 
