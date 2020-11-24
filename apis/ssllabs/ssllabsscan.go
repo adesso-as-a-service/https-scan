@@ -1146,10 +1146,6 @@ func setUp() {
 	}
 }
 
-func setUpLogger() {
-
-}
-
 func init() {
 	hooks.ManagerMap[manager.Table] = &manager
 
@@ -1166,6 +1162,4 @@ func init() {
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
 	hooks.ManagerParseConfig[manager.Table] = parseConfig
-
-	setUpLogger()
 }

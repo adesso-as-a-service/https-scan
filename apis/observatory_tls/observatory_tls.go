@@ -7,7 +7,6 @@ import (
 	"github.com/fatih/structs"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -271,7 +270,6 @@ var manager = hooks.Manager{
 	Table:            "ObservatoryTLS",          //Table name
 	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
 	OutputChannel:    nil,                       //output channel
-	LogLevel:         hooks.LogNotice,           //loglevel
 	Status:           hooks.ScanStatus{},        // initial scanStatus
 	FinishError:      0,                         // number of errors while finishing
 	ScanID:           0,                         // scanID
@@ -308,7 +306,7 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 		// pop first domain
 		if manager.CheckDoError() && len(manager.Errors) != 0 {
 			scanMsg, manager.Errors = manager.Errors[0], manager.Errors[1:]
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Retrying failed assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Retrying failed assessment next: %v", scanMsg.Domain.DomainName)
 		} else if len(domains) != 0 {
 			scan, retDom = domains[0], domains[1:]
 			scanMsg = hooks.InternalMessage{
@@ -317,17 +315,17 @@ func handleScan(domains []hooks.DomainsReachable, internalChannel chan hooks.Int
 				Retries:    0,
 				StatusCode: hooks.InternalNew,
 			}
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Trying new assessment next: %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("Trying new assessment next: %v", scanMsg.Domain.DomainName)
 		} else {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("No new assessment started"), manager.LogLevel, hooks.LogTrace)
+			manager.Logger.Tracef("No new assessment started")
 			return domains
 		}
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Started assessment for %v", scanMsg.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Started assessment for %v", scanMsg.Domain.DomainName)
 		go assessment(scanMsg, internalChannel)
 		manager.Status.AddCurrentScans(1)
 		return retDom
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("no new Assessment started"), manager.LogLevel, hooks.LogTrace)
+	manager.Logger.Tracef("no new Assessment started")
 	return domains
 }
 
@@ -336,7 +334,7 @@ func handleResults(result hooks.InternalMessage) {
 	manager.Status.AddCurrentScans(-1)
 
 	if !ok {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't assert type of result for  %v", result.Domain.DomainName), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't assert type of result for  %v", result.Domain.DomainName)
 		res = TableRow{}
 		result.StatusCode = hooks.InternalFatalError
 	}
@@ -345,10 +343,10 @@ func handleResults(result hooks.InternalMessage) {
 	case hooks.InternalFatalError:
 		res.ScanStatus = hooks.StatusError
 		manager.Status.AddFatalErrorScans(1)
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v failed ultimately", result.Domain.DomainName), manager.LogLevel, hooks.LogInfo)
+		manager.Logger.Infof("Assessment of %v failed ultimately", result.Domain.DomainName)
 	case hooks.InternalSuccess:
 		res.ScanStatus = hooks.StatusDone
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Assessment of %v was successful", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Assessment of %v was successful", result.Domain.DomainName)
 		manager.Status.AddFinishedScans(1)
 	}
 	where := hooks.ScanWhereCond{
@@ -357,11 +355,10 @@ func handleResults(result hooks.InternalMessage) {
 		TestWithSSL: result.Domain.TestWithSSL}
 	err := backend.SaveResults(manager.GetTableName(), structs.New(where), structs.New(res))
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't save results for %v: %v", result.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't save results for %v: %v", result.Domain.DomainName, err)
 		return
 	}
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Results for %v saved", result.Domain.DomainName), manager.LogLevel, hooks.LogDebug)
-
+	manager.Logger.Debugf("Results for %v saved", result.Domain.DomainName)
 }
 
 func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, CertificateInfoResult, error) {
@@ -371,7 +368,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 	var tlsObservatoryResult TlsObservatoryResult
 	var certificateInfoResult CertificateInfoResult
 
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Getting TLS observatory analyzation: %v", host), manager.LogLevel, hooks.LogTrace)
+	manager.Logger.Tracef("Getting TLS observatory analyzation: %v", host)
 
 	// Initiate the scan request, the body of the request contains information to hide the scan from the front-page
 	response, err := http.Post(scanApiURL, "application/x-www-form-urlencoded",
@@ -379,10 +376,10 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			currentConfig.Rescan,
 			host)))
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error invoking observatory_tls API for %v : %v", host, err), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Received error invoking observatory_tls API for %v : %v", host, err)
 		return TlsObservatoryResult{}, CertificateInfoResult{}, err
 	} else if response.StatusCode != http.StatusOK {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received non-OK status code %d from observatory_tls API for %v : %v", response.StatusCode, host, err), manager.LogLevel, hooks.LogDebug)
+		manager.Logger.Debugf("Received non-OK status code %d from observatory_tls API for %v : %v", response.StatusCode, host, err)
 		return TlsObservatoryResult{}, CertificateInfoResult{}, err
 	}
 
@@ -392,17 +389,17 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 	io.Copy(ioutil.Discard, response.Body)
 	response.Body.Close()
 
-	hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory started scan %d for host %v", scanRequestResponse.ScanID, host), manager.LogLevel, hooks.LogDebug)
+	manager.Logger.Debugf("TLS Observatory started scan %d for host %v", scanRequestResponse.ScanID, host)
 
 	// Poll every 5 seconds until scan is done, aborting on abnormal or failed states
 	for {
 		resultApiURL := currentConfig.APILocation + "/results"
 		response, err := http.Get(resultApiURL + fmt.Sprintf("?id=%d", scanRequestResponse.ScanID)) // ToDo: URL formatter
 		if err != nil {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling TLS Observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Received error polling TLS Observatory API for %v : %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		} else if response.StatusCode != http.StatusOK {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Got non-OK status code from TLS Observatory API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Got non-OK status code from TLS Observatory API for %v : %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 
 		}
@@ -412,7 +409,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 		io.Copy(ioutil.Discard, response.Body)
 		response.Body.Close()
 		if err != nil {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling analyzeBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Failed unmarshalling analyzeBody for %v: %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		}
 
@@ -431,7 +428,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var awsCertLintResult AwsCertLintResult
 			err = json.Unmarshal(element.Result, &awsCertLintResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.AwsCertLintResult = awsCertLintResult
@@ -439,7 +436,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var caaWorkerResult CAAWorkerResult
 			err = json.Unmarshal(element.Result, &caaWorkerResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.CAAWorkerResult = caaWorkerResult
@@ -447,7 +444,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var crlWorkerResult CRLWorkerResult
 			err = json.Unmarshal(element.Result, &crlWorkerResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.CRLWorkerResult = crlWorkerResult
@@ -455,7 +452,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var mozillaEvaluationWorkerResult MozillaEvaluationWorkerResult
 			err = json.Unmarshal(element.Result, &mozillaEvaluationWorkerResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.MozillaEvaluationWorkerResult = mozillaEvaluationWorkerResult
@@ -463,7 +460,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var mozillaGradingWorkerResult MozillaGradingWorkerResult
 			err = json.Unmarshal(element.Result, &mozillaGradingWorkerResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.MozillaGradingWorkerResult = mozillaGradingWorkerResult
@@ -471,7 +468,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var oscpStatusResult OscpStatusResult
 			err = json.Unmarshal(element.Result, &oscpStatusResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.OscpStatusResult = oscpStatusResult
@@ -479,7 +476,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var sslLabsClientSupportResults []SSLLabsClientSupportResult
 			err = json.Unmarshal(element.Result, &sslLabsClientSupportResults)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.SSLLabsClientSupportResults = sslLabsClientSupportResults
@@ -487,7 +484,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var symantecDistrustResult SymantecDistrustResult
 			err = json.Unmarshal(element.Result, &symantecDistrustResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.SymantecDistrustResult = symantecDistrustResult
@@ -495,12 +492,12 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 			var top1MResult Top1MResult
 			err = json.Unmarshal(element.Result, &top1MResult)
 			if err != nil {
-				hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err), manager.LogLevel, hooks.LogWarning)
+				manager.Logger.Warningf("Failed unmarshalling %v for %v: %v", element.Analyzer, host, err)
 				return TlsObservatoryResult{}, CertificateInfoResult{}, err
 			}
 			tlsObservatoryResult.Top1MResult = top1MResult
 		default:
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Unknown Analyzer scan result %v", element.Analyzer), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Unknown Analyzer scan result %v", element.Analyzer)
 		}
 	}
 
@@ -510,10 +507,10 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 		response, err := http.Get(certificateInfoApiURL + fmt.Sprintf("?id=%d", tlsObservatoryResult.CertId)) // ToDo: URL formatter
 
 		if err != nil {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Received error polling TLS Observatory certificate API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Received error polling TLS Observatory certificate API for %v : %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		} else if response.StatusCode != http.StatusOK {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Got non-OK status code from TLS Observatory certificate API for %v : %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Got non-OK status code from TLS Observatory certificate API for %v : %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		}
 
@@ -522,7 +519,7 @@ func invokeObservatoryTLSAnalyzation(host string) (TlsObservatoryResult, Certifi
 		io.Copy(ioutil.Discard, response.Body)
 		response.Body.Close()
 		if err != nil {
-			hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed unmarshalling certificateInfoBody for %v: %v", host, err), manager.LogLevel, hooks.LogWarning)
+			manager.Logger.Warningf("Failed unmarshalling certificateInfoBody for %v: %v", host, err)
 			return TlsObservatoryResult{}, CertificateInfoResult{}, err
 		}
 
@@ -536,13 +533,13 @@ func parseResult(tlsObservatoryResult TlsObservatoryResult, certificateInfoResul
 	var err error
 	alternativeNamesBytes, err := json.Marshal(certificateInfoResult.X509V3Extensions.SubjectAlternativeName)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("TLS Observatory - failed to marshal Alternative Names for %v: %v", tlsObservatoryResult.Target, err)
 	}
 
 	//firstObserved, err := time.Parse("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", certificateInfoResult.FirstSeenTimestamp)
 	firstObserved, err := time.Parse(time.RFC3339, certificateInfoResult.FirstSeenTimestamp)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("TLS Observatory - failed to parse FirstSeen timestamp for %v: %v", tlsObservatoryResult.Target, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("TLS Observatory - failed to parse FirstSeen timestamp for %v: %v", tlsObservatoryResult.Target, err)
 	}
 
 	row.TestWithSSL = true // ToDo: Is this supposed to be set here?
@@ -578,7 +575,7 @@ func parseResult(tlsObservatoryResult TlsObservatoryResult, certificateInfoResul
 func assessment(scan hooks.InternalMessage, internalChannel chan hooks.InternalMessage) {
 	scanRequestResponse, certificateInfoResult, err := invokeObservatoryTLSAnalyzation(scan.Domain.DomainName)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Couldn't get results from TLS Observatory API for %v: %v", scan.Domain.DomainName, err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Couldn't get results from TLS Observatory API for %v: %v", scan.Domain.DomainName, err)
 		scan.Results = TableRow{}
 		scan.StatusCode = hooks.InternalError
 		internalChannel <- scan
@@ -614,16 +611,15 @@ func configureSetUp(currentScan *hooks.ScanRow, channel chan hooks.ScanStatusMes
 func parseConfig(config interface{}) {
 	jsonString, err := json.Marshal(config)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing config to interface: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing config to interface: %v", err)
 	}
 	err = json.Unmarshal(jsonString, &currentConfig)
 	if err != nil {
-		hooks.LogIfNeeded(manager.Logger, fmt.Sprintf("Failed parsing json to struct: %v", err), manager.LogLevel, hooks.LogError)
+		manager.Logger.Errorf("Failed parsing json to struct: %v", err)
 	}
 	manager.MaxRetries = currentConfig.Retries
 	manager.ScanType = currentConfig.ScanType
 	maxScans = currentConfig.ParallelScans
-	manager.LogLevel = hooks.ParseLogLevel(currentConfig.LogLevel)
 }
 
 func continueScan(scan hooks.ScanRow) bool {
@@ -634,10 +630,8 @@ func continueScan(scan hooks.ScanRow) bool {
 }
 
 func setUp() {
-}
-
-func setUpLogger() {
-	manager.Logger = log.New(hooks.LogWriter, "OBS_TLS\t", log.Ldate|log.Ltime)
+	var logger = hooks.Logger
+	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
 
 func init() {
@@ -656,6 +650,4 @@ func init() {
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
 	hooks.ManagerParseConfig[manager.Table] = parseConfig
-
-	setUpLogger()
 }

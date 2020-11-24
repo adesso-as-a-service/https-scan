@@ -653,11 +653,6 @@ func setUp() {
 	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
 
-// Review: If it is emtpy, it can be removed, can it?
-func setUpLogger() {
-
-}
-
 func init() {
 	hooks.ManagerMap[manager.Table] = &manager
 
@@ -674,6 +669,4 @@ func init() {
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
 	hooks.ManagerParseConfig[manager.Table] = parseConfig
-
-	setUpLogger()
 }

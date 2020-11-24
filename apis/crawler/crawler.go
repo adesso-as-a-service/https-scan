@@ -301,10 +301,6 @@ func setUp() {
 	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
 
-func setUpLogger() {
-
-}
-
 func init() {
 	hooks.ManagerMap[manager.Table] = &manager
 
@@ -321,7 +317,5 @@ func init() {
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
 	hooks.ManagerParseConfig[manager.Table] = parseConfig
-
-	setUpLogger()
 
 }

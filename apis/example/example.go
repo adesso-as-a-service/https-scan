@@ -263,10 +263,6 @@ func continueScan(scan hooks.ScanRow) bool {
 ------------------------------------------------------------ */
 
 func setUp() {
-
-}
-
-func setUpLogger() {
 	var logger = apis.Logger
 	manager.Logger = logger.WithField("hook", manager.LoggingTag)
 }
@@ -287,7 +283,5 @@ func init() {
 	hooks.ManagerHandleResults[manager.Table] = handleResults
 
 	hooks.ManagerParseConfig[manager.Table] = parseConfig
-
-	setUpLogger()
 
 }
