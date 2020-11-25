@@ -391,21 +391,9 @@ CREATE TABLE [CertificatesV10]
 ) ON [PRIMARY]
 GO
 
-ALTER TABLE [CertificatesV10]
-    WITH CHECK ADD CONSTRAINT [FK_CertificatesV10_CertificatesV10] FOREIGN KEY ([NextThumbprint])
-        REFERENCES [CertificatesV10] ([Thumbprint])
-GO
-
-ALTER TABLE [CertificatesV10]
-    CHECK CONSTRAINT [FK_CertificatesV10_CertificatesV10]
-GO
-
--- ALTER TABLE [CertificatesV10]  WITH CHECK ADD  CONSTRAINT [FK_CertificatesV10_CertificatesV10] FOREIGN KEY([NextThumbprint])
--- REFERENCES [CertificatesV10] ([Thumbprint])
--- GO
-
--- ALTER TABLE [CertificatesV10] CHECK CONSTRAINT [FK_CertificatesV10_CertificatesV10]
--- GO
+/*****************************************************************************/
+/*****                     CREATE TABLE CertificateChainsV10                **/
+/*****************************************************************************/
 
 CREATE TABLE [CertificateChainsV10]
 (
