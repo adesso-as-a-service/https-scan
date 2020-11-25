@@ -264,17 +264,18 @@ var used *bool // Defines if the Observatory TLS scan should be used
 var version = "10"
 
 var manager = hooks.Manager{
-	MaxRetries:       3,        //Max Retries
-	MaxParallelScans: maxScans, //Max parallel Scans
-	Version:          version,
-	Table:            "ObservatoryTLS",          //Table name
-	ScanType:         hooks.ScanBoth,            // Scan HTTP or HTTPS
-	OutputChannel:    nil,                       //output channel
-	Status:           hooks.ScanStatus{},        // initial scanStatus
-	FinishError:      0,                         // number of errors while finishing
-	ScanID:           0,                         // scanID
-	Errors:           []hooks.InternalMessage{}, //errors
-	FirstScan:        false,                     //hasn't started first scan
+	MaxRetries:			3,							//Max Retries
+	MaxParallelScans:	maxScans, 					//Max parallel Scans
+	Version:			version,
+	Table:				"ObservatoryTLS",			//Table name
+	ScanType:			hooks.ScanBoth,				// Scan HTTP or HTTPS
+	OutputChannel:		nil,						//output channel
+	Status:				hooks.ScanStatus{},			// initial scanStatus
+	FinishError:		0,							// number of errors while finishing
+	ScanID:				0,							// scanID
+	Errors:				[]hooks.InternalMessage{},	//errors
+	FirstScan:			false,						//hasn't started first scan
+	LoggingTag:			"observatorytls"			
 }
 
 // Config contains the configurable Values for this scan
