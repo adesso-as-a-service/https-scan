@@ -1,25 +1,24 @@
 package backend
 
 import (
+	"../hooks"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
-	"strings"
-
-	"../hooks"
 	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/fatih/structs"
+	"github.com/sirupsen/logrus"
+	"os"
+	"strings"
 )
 
 var globalDatabase *sql.DB
 
 // maximum number of inserts in one SQLStatement
 var maxSQLInserts = 300
-var logger = log.New(hooks.LogWriter, "SQLwrt \t", log.Ldate|log.Ltime)
+var Logger *logrus.Entry
 
 // Datatypes
 
@@ -56,7 +55,7 @@ func GetScans(table string, scanID int, scanStatus uint8) ([]hooks.DomainsReacha
 	}
 	for rows.Next() {
 		if err := rows.Scan(&help.DomainID, &help.DomainName, &help.DomainReachable, &help.TestWithSSL); err != nil {
-			logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 		result = append(result, help)
 	}
@@ -74,97 +73,97 @@ func PrepareScanData(table string, scanID int, scanType int) error {
 		err := updateTestWithSSL(table, scanID, hooks.ReachableSSL, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 		err = updateScanStatus(table, scanID, hooks.ReachableHTTP, hooks.StatusIgnored)
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
 		}
 	case hooks.ScanOnlyHTTP:
 		err := updateTestWithSSL(table, scanID, hooks.ReachableHTTP, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 		err = updateScanStatus(table, scanID, hooks.ReachableSSL, hooks.StatusIgnored)
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'ScanStatus' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
 		}
 	case hooks.ScanBoth:
 		err := updateTestWithSSL(table, scanID, hooks.ReachableHTTP, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableSSL, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableSSL)
 		}
 		err = duplicateScansWithSSL(table, scanID)
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("duplicating  values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("duplicating  values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 
 	case hooks.ScanOnePreferHTTP:
 		err := updateTestWithSSL(table, scanID, hooks.ReachableHTTP, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 	case hooks.ScanOnePreferSSL:
 		err := updateTestWithSSL(table, scanID, hooks.ReachableHTTP, uint8(0))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableHTTP)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 		err = updateTestWithSSL(table, scanID, hooks.ReachableBoth, uint8(1))
 		if err != nil {
 			// Add errorhandling
-			logger.Printf("[ERROR] %v", err.Error())
-			logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
+			Logger.Printf("[ERROR] %v", err.Error())
+			Logger.Fatalf("Updating the 'TestWithSSL' values for table '%v' failed for reachable %v", table, hooks.ReachableBoth)
 		}
 
 	}
@@ -204,14 +203,10 @@ func duplicateScansWithSSL(table string, scanID int) error {
 
 // SaveResults updates table columns defined by "results" for the row defined by "whereCond". The "whereCond"-Parameters are concatenated by ANDs
 func SaveResults(table string, whereCond *structs.Struct, results *structs.Struct) error {
-	var err error
 	set, setArgs := getSetString(results)
 	where, whereArgs := getWhereString(whereCond)
-	if err != nil {
-		// Add errorhandling
-		return err
-	}
-	_, err = globalDatabase.Exec(fmt.Sprintf(
+
+	_, err := globalDatabase.Exec(fmt.Sprintf(
 		"UPDATE %[1]v "+
 			"SET %s "+
 			"WHERE %s", table, set, where), append(setArgs, whereArgs...)...)
@@ -335,7 +330,7 @@ func InsertNewScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	}
 	for rows.Next() {
 		if err := rows.Scan(&scan.ScanID); err != nil {
-			logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 	}
 	return scan, err
@@ -361,7 +356,7 @@ func GetLastScan(id int) (hooks.ScanRow, error) {
 	}
 	for rows.Next() {
 		if err := rows.Scan(&scan.ScanID, &scan.SSLLabs, &scan.SSLLabsVersion, &scan.Observatory, &scan.ObservatoryVersion, &scan.SecurityHeaders, &scan.SecurityHeadersVersion, &scan.Crawler, &scan.CrawlerVersion, &scan.Config); err != nil {
-			logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 	}
 	return scan, err
@@ -381,7 +376,7 @@ func UpdateScan(scan hooks.ScanRow) error {
 // Remove results with ScanStgatus ignored (2)
 func RemoveIgnored(scan hooks.ScanRow) error {
 	var err error
-	// Currently onle SSLLabs, because its the olny one which use staurs ignored
+	// Currently only SSLLabs, because its the only one which use status ignored
 	_, err = globalDatabase.Exec(
 		"DELETE FROM  "+
 			"SSLLabsV10 "+
@@ -394,25 +389,55 @@ func SaveCertificates(rows []*hooks.CertificateRow, table string) error {
 	ctx := context.Background()
 	for _, row := range rows {
 		query := `
-IF NOT EXISTS (SELECT * FROM %[1]v WHERE Thumbprint = ?)
+IF NOT EXISTS (SELECT * FROM %[1]v WHERE ThumbprintSHA256 = ?)
 	BEGIN
 		INSERT INTO %[1]v
-		(Thumbprint, SerialNumber, Subject, Issuer, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, NextThumbprint, ValidFrom, ValidTo, AltNames)
+		(ThumbprintSHA256, ThumbprintSHA1, CreatedAt, UpdatedAt, CommonNames, AltNames, SerialNumber, Subject, IssuerSubject, SigAlg, RevocationStatus, Issues, KeyStrength, DebianInsecure, ValidFrom, ValidTo)
 		VALUES
-		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	END
 ELSE
 	BEGIN
 		UPDATE  %[1]v
-		SET Issues = ?, ValidFrom = ?, ValidTo = ?, AltNames = ?
-		WHERE Thumbprint = ?
+		SET UpdatedAt = ?, Issues = ?, ValidFrom = ?, ValidTo = ?, CommonNames = ?, AltNames = ?
+		WHERE ThumbprintSHA256 = ?
 	END
 `
 		var err error
 		_, err = globalDatabase.ExecContext(ctx,
 			fmt.Sprintf(query, table),
-			row.Thumbprint, row.Thumbprint, row.SerialNumber, row.Subject, row.Issuer, row.SigAlg, row.RevocationStatus, row.Issues,
-			row.KeyStrength, row.DebianInsecure, row.NextThumbprint, row.ValidFrom, row.ValidTo, row.AltNames, row.Issues, row.ValidFrom, row.ValidTo, row.AltNames, row.Thumbprint)
+			row.ThumbprintSHA256,
+			row.ThumbprintSHA256, row.ThumbprintSHA1, row.CreatedAt, row.UpdatedAt,
+			row.CommonNames, row.AltNames, row.SerialNumber, row.Subject, row.IssuerSubject, row.SigAlg, row.RevocationStatus, row.Issues,
+			row.KeyStrength, row.DebianInsecure, row.ValidFrom, row.ValidTo,
+			row.CreatedAt, row.Issues, row.ValidFrom, row.ValidTo, row.CommonNames, row.AltNames, row.ThumbprintSHA256)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SaveCertificateChains stores all given certificate chains in the Table, while avoiding duplicate entries
+func SaveCertificateChains(rows []*hooks.CertificateChainRow, table string) error {
+	ctx := context.Background()
+	for _, row := range rows {
+		query := `
+MERGE %[1]v AS [Target]
+USING (SELECT ? AS ThumbprintSHA256, ? AS NextThumbprintSHA256) AS [Source] 
+ON [Target].ThumbprintSHA256 = [Source].ThumbprintSHA256 AND [Target].NextThumbprintSHA256 = [Source].NextThumbprintSHA256
+WHEN MATCHED THEN
+  UPDATE SET [Target].UpdatedAt = ?
+WHEN NOT MATCHED THEN
+  INSERT (ThumbprintSHA256, NextThumbprintSHA256, CreatedAt, UpdatedAt) VALUES ([Source].ThumbprintSHA256, [Source].NextThumbprintSHA256, ?, ?);
+`
+
+		var err error
+		_, err = globalDatabase.ExecContext(ctx,
+			fmt.Sprintf(query, table),
+			row.ThumbprintSHA256, row.NextThumbprintSHA256,
+			row.UpdatedAt,
+			row.CreatedAt, row.UpdatedAt)
 		if err != nil {
 			return err
 		}
@@ -476,11 +501,11 @@ func GetConflictingDomains(domains []string, listID string) map[string]hooks.Dom
 		currentDomains, intDoms = intDoms[:100], intDoms[100:]
 		rows, err := globalDatabase.Query(queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...)...)
 		if err != nil {
-			logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 		for rows.Next() {
 			if err := rows.Scan(&list.DomainName, &list.ListID, &list.IsActive); err != nil {
-				logger.Fatal(err)
+				Logger.Fatal(err)
 			}
 			result[list.DomainName] = list
 		}
@@ -490,12 +515,12 @@ func GetConflictingDomains(domains []string, listID string) map[string]hooks.Dom
 	currentDomains = intDoms
 	rows, err := globalDatabase.Query(queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...)...)
 	if err != nil {
-		logger.Printf("Query:%s\nparams: %v\n", queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...))
-		logger.Panic(err)
+		Logger.Printf("Query:%s\nparams: %v\n", queryBase+queryIn.String(), append([]interface{}{listID}, currentDomains...))
+		Logger.Panic(err)
 	}
 	for rows.Next() {
 		if err := rows.Scan(&list.DomainName, &list.ListID, &list.IsActive); err != nil {
-			logger.Panic(err)
+			Logger.Panic(err)
 		}
 		result[list.DomainName] = list
 	}

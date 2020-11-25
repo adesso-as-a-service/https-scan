@@ -13,8 +13,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rifflock/lfshook"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -25,11 +26,8 @@ import (
 	"./hooks"
 )
 
-// logLevel sets the global verbosity of thr Logging
-var logLevel int
+var Logger *logrus.Entry
 
-var logger = log.New(hooks.LogWriter, "Control\t", log.Ldate|log.Ltime)
-var infoLogger = log.New(hooks.LogWriter, "", 0)
 var forceOverwrite bool
 var configuration map[string]interface{}
 
@@ -49,7 +47,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	if err != nil {
 		return scan, err
 	}
-	infoLogger.Printf("---------------------------------------------------------------------------------------------------\nStarting Scan with ScanID %d\n---------------------------------------------------------------------------------------------------", scan.ScanID)
+	Logger.Infof("Starting Scan with ScanID %d", scan.ScanID)
 
 	domains, err := backend.GetDomains()
 	if err != nil {
@@ -57,7 +55,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	}
 	if len(domains) == 0 {
 		backend.UpdateScan(scan)
-		logger.Fatal("There are no domains to scan!")
+		Logger.Fatal("There are no domains to scan!")
 	}
 	scanData, scan, err := runSSLTest(domains, scan)
 	if err != nil {
@@ -65,7 +63,7 @@ func initializeScan(scan hooks.ScanRow, usedTables []string) (hooks.ScanRow, err
 	}
 	if len(scanData) == 0 {
 		backend.UpdateScan(scan)
-		logger.Fatal("There are no domains left to scan after a reachability test!")
+		Logger.Fatal("There are no domains left to scan after a reachability test!")
 	}
 
 	err = backend.InsertScanData(getTablenames(usedTables), scanData)
@@ -84,10 +82,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if err != nil {
 		return scan, err
 	}
-	err = json.Unmarshal([]byte(scan.Config.String), &configuration)
-	if err != nil {
-		hooks.LogIfNeeded(logger, fmt.Sprintf("Failed unmarshaling configuration '%v': %v", scan.Config.String, err), logLevel, hooks.LogCritical)
-	}
+
 	// configuring Apis and set used managers
 	for tableName, f := range hooks.ManagerParseConfig {
 		f(configuration[tableName])
@@ -102,7 +97,7 @@ func continueScan(scan hooks.ScanRow) (hooks.ScanRow, error) {
 	if len(broken) != 0 {
 		err = fmt.Errorf("The version for the following Scans have changed in the meantime: %s! Please start a new Scan", strings.Join(broken, ", "))
 	}
-	infoLogger.Printf("---------------------------------------------------------------------------------------------------\nContinueing Scan with ScanID %d\n---------------------------------------------------------------------------------------------------", scan.ScanID)
+	Logger.Infof("Continuing Scan with ScanID %d", scan.ScanID)
 	return scan, err
 }
 
@@ -310,9 +305,64 @@ func parseSettings(list string, file string, domain string, scan bool, add bool,
 
 }
 
+func setUpLogging(confVerbosity *string, confLogFormat *string, confLogReportCaller *bool) {
+	var loglevel, parseLevelError = logrus.ParseLevel(*confVerbosity)
+	if parseLevelError != nil {
+		loglevel = logrus.TraceLevel
+	}
+
+	var loggerConfiguration = logrus.New()
+	loggerConfiguration.SetLevel(loglevel)
+	loggerConfiguration.SetReportCaller(*confLogReportCaller)
+
+	// Setup logging to stdout (text or json format)
+	switch *confLogFormat {
+	case "json":
+		loggerConfiguration.SetFormatter(&logrus.JSONFormatter{})
+	default:
+		loggerConfiguration.SetFormatter(&logrus.TextFormatter{
+			DisableColors:          false,
+			PadLevelText:           true,
+			DisableLevelTruncation: true,
+		})
+	}
+
+	// Setup logging to file (always json format)
+	if _, err := os.Stat("log"); os.IsNotExist(err) {
+		if err != nil {
+			loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Failed retrieving FileInfo for file logging")
+		} else {
+			err = os.Mkdir("log", 0700)
+			if err != nil {
+				loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Error while creating log directory")
+			}
+		}
+	}
+	file, err := os.Create("log/" + time.Now().Format("2006_01_02_150405") + ".log")
+	if err != nil {
+		loggerConfiguration.WithFields(logrus.Fields{"error": err}).Errorf("Failed to set up file logging")
+	} else {
+		loggerConfiguration.Hooks.Add(lfshook.NewHook(
+			file,
+			&logrus.JSONFormatter{},
+		))
+	}
+
+	// hook attribute should always be set for log parsers (HIDS, CLC, ...)
+	Logger = loggerConfiguration.WithFields(logrus.Fields{"hook": nil})
+
+	hooks.Logger = Logger
+	backend.Logger = Logger
+
+	Logger.WithFields(logrus.Fields{"chosen_level": loglevel, "error": parseLevelError}).Info("Logging has been initialized")
+}
+
 func main() {
 	// Read input arguments
-	var confVerbosity = flag.String("verbosity", "info", "Configure log verbosity: error, notice, info, debug, or trace")
+	var confVerbosity = flag.String("verbosity", "info", "Configure log verbosity: panic, fatal, error, warn/warning, info, debug and trace")
+	var confLogFormat = flag.String("log_format", "text", "Configure log format: text or json")
+	var confLogReportCaller = flag.Bool("log_report_caller", false, "Add calling method as logging field (should be used for debugging only)")
+
 	var confContinue = flag.Bool("continue", false, "Continue the last scan")
 
 	var confList = flag.String("list", "", "Specify a ListID")
@@ -331,11 +381,14 @@ func main() {
 	var confConfig = flag.String("config", "", "Configuration file for the scanners")
 
 	// setUp Input Arguments for apis
-	for _, f := range hooks.FlagSetUp {
-		f()
+	for _, hookSetUpFunction := range hooks.FlagSetUp {
+		hookSetUpFunction()
 	}
 
 	flag.Parse()
+
+	// Initialize logging
+	setUpLogging(confVerbosity, confLogFormat, confLogReportCaller)
 
 	// Variables
 	var err error
@@ -346,51 +399,52 @@ func main() {
 	// read ForceOverwrite Flag
 	forceOverwrite = *confOverwrite
 
-	// configure managers
-	logLevel = hooks.ParseLogLevel(*confVerbosity)
-
 	// create output channel
 	outputChannel := make(chan hooks.ScanStatusMessage)
 	timeout := make(map[string]time.Time)
 	finished := make(map[string]bool)
 
+	// ToDo: still used?
 	if *confConfig != "" && !*confContinue {
 		configuration, err = readConfigFile(*confConfig)
 		if err != nil {
-			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed reading configuration-file '%v': %v", *confConfig, err), logLevel, hooks.LogCritical)
+			Logger.WithFields(logrus.Fields{
+				"config": *confConfig,
+				"error":  err,
+			}).Panic("Failed reading configuration-file")
 		}
 		configString, err := json.Marshal(configuration)
 		if err != nil {
-			hooks.LogIfNeeded(logger, fmt.Sprintf("Failed marshaling configuration: %v", err), logLevel, hooks.LogCritical)
+			Logger.WithFields(logrus.Fields{"error": err}).Panic("Failed reading configuration-file")
 		}
 		currentScan.Config.String = string(configString)
 		currentScan.Config.Valid = true
 	}
 	// configuring Apis and set used managers
-	for tableName, f := range hooks.ConfigureSetUp {
-		if f(&currentScan, outputChannel, configuration[tableName]) {
+	for tableName, hookConfigureSetUpFunction := range hooks.ConfigureSetUp {
+		if hookConfigureSetUpFunction(&currentScan, outputChannel, configuration[tableName]) {
 			usedManagers = append(usedManagers, tableName)
 		}
 	}
 
 	config, err := backend.ReadSQLConfig("sql_config.json")
 	if err != nil {
-		logger.Fatalf("Error occurred while reading the config-file 'sql_config.json': %v", err)
+		Logger.Fatalf("Error occurred while reading the config-file 'sql_config.json': %v", err)
 	}
-	infoLogger.Println("Reading SQL Config completed")
+	Logger.Info("Reading SQL Config completed")
 
 	// Opening Database
 	err = backend.OpenDatabase(config)
 	if err != nil {
 
-		logger.Fatalf("Error occurred while opening the database: %v", err)
+		Logger.Fatalf("Error occurred while opening the database: %v", err)
 	}
 
 	if !*confContinue {
 		// parse Input settings
 		test, err := parseSettings(*confList, *confFile, *confDomain, *confScan, *confAdd, *confRemove, *confInactive, *confActive, *confProject)
 		if err != nil {
-			logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 
 		if !test {
@@ -398,6 +452,9 @@ func main() {
 		}
 		// create Scan if not continued
 		currentScan, err = initializeScan(currentScan, usedManagers)
+		if err != nil {
+			Logger.Fatalf("Error during initializeScan: %v", err)
+		}
 	} else {
 		// continue last
 		currentScan.ScanID = -1
@@ -405,7 +462,7 @@ func main() {
 
 	}
 	if err != nil {
-		logger.Fatalf("Error occurred while initializing Scan: %v", err)
+		Logger.Fatalf("Error occurred while initializing Scan: %v", err)
 	}
 
 	// start ui
@@ -422,10 +479,10 @@ scan:
 		select {
 		case msg := <-outputChannel:
 			if msg.Status != nil {
-				hooks.LogIfNeeded(logger, fmt.Sprintf("Received status message from %v", msg.Sender), logLevel, hooks.LogDebug)
+				Logger.Tracef("Received status message from '%v'", msg.Sender)
 				timeout[msg.Sender] = time.Now()
 			} else {
-				hooks.LogIfNeeded(logger, fmt.Sprintf("Received 'finished' message from %v", msg.Sender), logLevel, hooks.LogDebug)
+				Logger.Debugf("Received 'finished' message from %v", msg.Sender)
 				finished[msg.Sender] = true
 			}
 		case <-updateTime:
@@ -433,22 +490,32 @@ scan:
 			for _, manager := range usedManagers {
 				allDone = allDone && finished[manager]
 				if !finished[manager] && time.Since(timeout[manager]) > time.Duration(5*apis.StatusTime)*time.Second {
-					logger.Fatalf("Manager %s has been unreachable fo %d seconds", manager, 5*apis.StatusTime)
+					Logger.Fatalf("Manager %s has been unreachable for %d seconds", manager, 5*apis.StatusTime)
 				}
 
 			}
 			if allDone {
-				infoLogger.Printf("---------------------------------------------------------------------------------------------------\nScan with ScanID %d is done\n---------------------------------------------------------------------------------------------------", currentScan.ScanID)
+				Logger.Infof("Scan with ScanID %d is done", currentScan.ScanID)
 				currentScan.Done = true
-				backend.UpdateScan(currentScan)
+				err := backend.UpdateScan(currentScan)
 
-				err := backend.RemoveIgnored(currentScan)
 				if err != nil {
-					hooks.LogIfNeeded(logger, fmt.Sprintf("Cannot delete ignored results"), logLevel, hooks.LogError)
-				} else {
-					hooks.LogIfNeeded(logger, fmt.Sprintf("Ignored results are deleted"), logLevel, hooks.LogInfo)
+					Logger.WithFields(logrus.Fields{
+						"error": err,
+						"data":  currentScan,
+					}).Error("Database UPDATE failed")
 				}
-				
+
+				err = backend.RemoveIgnored(currentScan)
+				if err != nil {
+					Logger.WithFields(logrus.Fields{
+						"error": err,
+						"data":  currentScan,
+					}).Error("Cannot delete ignored results")
+				} else {
+					Logger.Info("Ignored results have been deleted")
+				}
+
 				break scan
 			}
 		}
