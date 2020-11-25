@@ -275,7 +275,7 @@ var manager = hooks.Manager{
 	ScanID:				0,							// scanID
 	Errors:				[]hooks.InternalMessage{},	//errors
 	FirstScan:			false,						//hasn't started first scan
-	LoggingTag:			"observatorytls"			
+	LoggingTag:			"observatorytls",			
 }
 
 // Config contains the configurable Values for this scan
