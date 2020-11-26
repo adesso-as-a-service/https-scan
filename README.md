@@ -144,10 +144,13 @@ GENERAL OPTIONS
 | -project | | Field to specify the domains belonging to a project (project id) |
 | -remove | false | Remove the given domains from the specified ListID |
 | -scan | false | Scan the given domains|
-| -verbosity | info | Configure log verbosity: error, notice, info, debug, or trace|
+| -verbosity | info | Configure log verbosity: panic, fatal, error, warn/warning, info, debug and trace |
+| -log_format | text | Configure log format: text or json |
+| -log_report_caller | false | Add calling method as logging field (should be used for debugging only) |
 | -config | file | File to read API-Options from
 | -no-crawler | false | Don't use the redirect crawler|
 | -no-obs | false | Don't use the Observatory-Scan|
+| -no-obs-tls | false | Don't use the Observatory-TLS-Scan|
 | -no-sechead | false | Don't use the SecurityHeaders-Scan|
 | -no-ssllabs | false | Don't use the SSLLabs-Scan|
 
