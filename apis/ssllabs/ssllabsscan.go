@@ -575,7 +575,7 @@ func invokeGetRepeatedly(url string) (*http.Response, []byte, error) {
 				if err == nil {
 					if currentAssessments != i {
 						currentAssessments = i
-						manager.Logger.Debugf("Server set current assessments to %v", headerValue)
+						manager.Logger.Infof("Server set current assessments to %v", headerValue)
 					}
 				} else {
 					manager.Logger.Warnf("Ignoring invalid X-Current-Assessments value (%v): %v", headerValue, err)
@@ -650,7 +650,7 @@ func invokeApi(command string) (*http.Response, []byte, error) {
 		switch resp.StatusCode {
 		case http.StatusOK:
 			return resp, body, nil
-		case http.StatusTooManyRequests, http.StatusServiceUnavailable, 529:
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable, 529, 403:
 			// In case of the overloaded server, randomize the sleep time so
 			// that some clients reconnect earlier and some later.
 
