@@ -10,7 +10,7 @@
   "SSLLabs": {
     "Retries": 3,
     "ScanType": 1,
-    "ParallelScans": 10,
+    "ParallelScans": 5,
     "APILocation": "https://api.ssllabs.com/api/v3",
     "IgnoreMismatch": true,
     "StartNew": false,
