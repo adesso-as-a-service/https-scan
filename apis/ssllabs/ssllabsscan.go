@@ -650,19 +650,28 @@ func invokeApi(command string) (*http.Response, []byte, error) {
 		switch resp.StatusCode {
 		case http.StatusOK:
 			return resp, body, nil
-		case http.StatusTooManyRequests, http.StatusServiceUnavailable, 529, 403:
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusForbidden, 529:
 			// In case of the overloaded server, randomize the sleep time so
 			// that some clients reconnect earlier and some later.
 
-			if sleepCounter > 5 {
+			logInfoFields := logrus.Fields{
+				"response_body": string(body),
+				"response_code": resp.StatusCode,
+				"command":       command,
+			}
+
+			if sleepCounter >= 5 {
+				manager.Logger.WithFields(logInfoFields).Warnf("Abandoning scan after %d tries to call SSLLabs API", sleepCounter)
+
 				return resp, body, errors.New(fmt.Sprintf("Assessment failed for command '%v' with response code %v (slept for too long)", command, resp.StatusCode))
 			}
-			sleepCounter += 1
 
+			manager.Logger.WithFields(logInfoFields).Trace("SSLLabs API request was unsuccessful. Sleeping until retry")
+
+			sleepCounter += 1
 			sleepTime := 60 + rand.Int31n(60)
 
 			manager.Logger.Infof("Sleeping for %v Seconds after response code %v for command '%v'", sleepTime, resp.StatusCode, command)
-
 			time.Sleep(time.Duration(sleepTime) * time.Second)
 		default:
 			return resp, body, errors.New(fmt.Sprintf("Unexpected response status code %v for command '%v'", resp.StatusCode, command))
