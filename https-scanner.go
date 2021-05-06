@@ -380,10 +380,6 @@ func main() {
 
 	var confConfig = flag.String("config", "", "Configuration file for the scanners")
 
-	loc, err := time.LoadLocation("UTC")
-	if err != nil {
-	}
-	time.Local = loc // -> this is setting the global timezone
 	
 	// setUp Input Arguments for apis
 	for _, hookSetUpFunction := range hooks.FlagSetUp {
@@ -409,6 +405,11 @@ func main() {
 	timeout := make(map[string]time.Time)
 	finished := make(map[string]bool)
 
+	loc, err := time.LoadLocation("UTC")
+	if err != nil {
+	}
+	time.Local = loc // -> this is setting the global timezone
+	
 	// ToDo: still used?
 	if *confConfig != "" && !*confContinue {
 		configuration, err = readConfigFile(*confConfig)
